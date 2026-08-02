@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# 音声のやり取りが終わったときに呼ぶ。SubagentStop フックから使う想定。
+#
+# claude-live スキルは専用のエージェント（agent: claude-live）で走るので、
+# SubagentStop のペイロードにある agent_type を見れば、終わったのが音声セッションか
+# 他のサブエージェントかを区別できる。他のものなら何もしない。
+#
+# MCP サーバーはセッションが続く限り生きているため、サーバーの終了を待っていると
+# 音声を終えてもオーバーレイが残る。ここで自分のセッションの印を外し、
+# 利用者の on-end に「このセッションは音声を使い終えた」と伝える。
+#
+# 標準入力に来る JSON（session_id / agent_type を含む）を読む。手で試すときは:
+#   echo '{"agent_type":"claude-live","session_id":"..."}' | ./end-voice-session
+set -uo pipefail
+
+MARKS="$HOME/.local/state/claude-live/voice"
+ON_END="$HOME/.config/claude-live/on-end"
+
+payload=$(cat)
+
+# jq は入っているとは限らないので python3 で読む。壊れた JSON なら空を返して黙って終わる。
+read -r agent_type session_id <<EOF
+$(printf '%s' "$payload" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print(" ")
+    raise SystemExit
+print(data.get("agent_type") or "-", data.get("session_id") or "-")
+' 2>/dev/null)
+EOF
+
+# プラグインのエージェントは名前空間つきで見えることがあるため、どちらも受ける。
+case "$agent_type" in
+  claude-live | claude-live:claude-live) ;;
+  *) exit 0 ;;
+esac
+
+# このセッションが置いた印だけを外す。他のセッションの音声は続いているかもしれない。
+if [ -d "$MARKS" ] && [ "$session_id" != "-" ]; then
+  for mark in "$MARKS"/*; do
+    [ -f "$mark" ] || continue
+    if [ "$(cat "$mark" 2>/dev/null)" = "$session_id" ]; then
+      rm -f "$mark"
+    fi
+  done
+fi
+
+# 片付けの中身は利用者に任せる。置いていなければ何もしない。
+# 残った印を見て「他のセッションがまだ音声中か」を判断するのは on-end 側の仕事。
+[ -x "$ON_END" ] && "$ON_END"
+exit 0

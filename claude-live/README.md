@@ -16,14 +16,16 @@ claude-live/                         プラグイン本体
 │   │   ├── start-claude-live        Claude Code を起動して音声操作を始める
 │   │   ├── ensure-engine            読み上げエンジンが無ければ導入する
 │   │   ├── use-engine               読み上げエンジンを切り替える
+│   │   ├── end-voice-session        音声のやり取りの終わりを知らせる（SubagentStop フック用）
 │   │   └── stop-engines             読み上げエンジンを止める（SessionEnd フック用）
 │   └── resources/
 │       └── dictionary.tsv           読み方の辞書（自由に編集できる）
 ├── skills/fixing-pronunciation/
 │   └── SKILL.md                     読み間違いを辞書で直すときの手順
+├── agents/claude-live.md            音声で操作するときの作業を受け持つエージェント
 ├── .claude-plugin/plugin.json       プラグインの定義
 ├── .mcp.json                        MCP サーバーの定義
-└── hooks/hooks.json                 SessionEnd でエンジンを止める
+└── hooks/hooks.json                 SessionEnd / SubagentStop のフック
 ```
 
 `skills/` `.mcp.json` `hooks/hooks.json` はいずれもプラグインルート直下に置く決まりで、
@@ -230,6 +232,36 @@ skills/claude-live/scripts/stop-engines
   現在のセッションのサーバーが終わるのを最大 5 秒待ってから判定する
 - **GUI アプリ（AivisSpeech.app）が起動している** —
   エンジンはアプリが抱えているもので、止めるとアプリが壊れる
+
+## 音声の開始と終了を外へ知らせる
+
+表示や記録など、音声の開始終了に合わせて何かを動かしたいとき用の口が 2 つある。
+どちらも**置いていなければ何も起きない**ので、使わない環境では副作用がない。
+
+| 置き場所 | 呼ばれるとき |
+| --- | --- |
+| `~/.config/claude-live/on-start` | 音声のやり取りが始まったとき |
+| `~/.config/claude-live/on-end` | 音声のやり取りが終わったとき |
+
+加えて `~/.local/state/claude-live/` を作っておくと、いま何をしているかが
+`state`（`thinking` / `speaking` / `idle`）に書かれる。
+
+### 終わりをどう検知するか
+
+MCP サーバーはセッションが続く限り生きているので、**サーバーの終了を待っていると
+音声を終えても後片付けが始まらない**。そこで `SubagentStop` フックを使う。
+
+スキルは `agent: claude-live` で専用のエージェントとして走るため、
+`SubagentStop` のペイロードの `agent_type` を見れば、終わったのが音声セッションか
+他のサブエージェントかを区別できる。`end-voice-session` がこれを判定して `on-end` を呼ぶ。
+
+「他のセッションがまだ音声を使っているか」は、`~/.local/state/claude-live/voice/<PID>`
+の印で数える。中身はそのサーバーを抱えている Claude Code のセッション ID。
+**MCP サーバーの数で判定してはいけない。** サーバーは音声を使わないセッションでも
+常駐するので、Claude Code をもう 1 枚開いているだけで永久に「使用中」になる。
+
+印は外から消される前提で扱う。消えたあとに話しかけられれば置き直し、
+`on-start` を鳴らし直すので、同じセッションで何度でも始め直せる。
 
 ## 読み方の辞書
 
