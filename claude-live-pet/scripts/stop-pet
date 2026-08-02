@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# ペットを止める。claude-live の on-end から呼ぶ想定。
+set -uo pipefail
+pkill -f "claude-live-pet" 2>/dev/null
+exit 0

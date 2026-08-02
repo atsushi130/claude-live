@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# 表示するペットを選ぶ。
+#
+#   ./use-pet            いま選んでいるペットと、選べるものを表示する
+#   ./use-pet <名前>      切り替える
+#
+# 書き込み用の config.json の pet を書き換えるだけ。動いたまま次の監視周期（0.2 秒）で
+# 読み直されるので、起動し直さなくてよい。
+set -uo pipefail
+source "$(cd "$(dirname "$0")" && pwd -P)/paths.sh"
+
+CONFIG="$PET_DATA/config.json"
+INSTALLED="$PET_DATA/pets"
+BUILTIN="$PET_SCRIPTS/pets"
+
+current() {
+  python3 - "$CONFIG" <<'PY'
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        print(json.load(handle).get("pet") or "clawd")
+except Exception:
+    print("clawd")
+PY
+}
+
+if [ $# -eq 0 ]; then
+  echo "いま選んでいるペット: $(current)"
+  "$PET_SCRIPTS/add-pet"
+  exit 0
+fi
+
+name="$1"
+if [ ! -f "$INSTALLED/$name/manifest.json" ] && [ ! -f "$BUILTIN/$name/manifest.json" ]; then
+  echo "そんなペットは無い: $name" >&2
+  "$PET_SCRIPTS/add-pet" >&2
+  exit 1
+fi
+
+# 他の設定（height / flipped / 手で直した sequences）を消さないよう、pet だけ差し替える。
+python3 - "$CONFIG" "$name" <<'PY'
+import json, sys
+path, name = sys.argv[1], sys.argv[2]
+try:
+    with open(path, encoding="utf-8") as handle:
+        config = json.load(handle)
+except Exception:
+    config = {}
+config["pet"] = name
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(config, handle, ensure_ascii=False, indent=2)
+    handle.write("\n")
+PY
+
+echo "ペットを $name に切り替えた。動いていれば 0.2 秒ほどで反映される。"

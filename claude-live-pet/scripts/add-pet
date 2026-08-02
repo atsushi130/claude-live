@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# 自分のペットを登録する。
+#
+#   ./add-pet                                   登録済みと同梱のペットを一覧する
+#   ./add-pet <名前> <ディレクトリ>               コマ一式（manifest.json 込み）を登録する
+#   ./add-pet <名前> --sheet <画像> <動き>=<行> …  スプライトシートから切り出して登録する
+#
+# 例:
+#   ./add-pet 9s ~/somewhere/9s-frames
+#   ./add-pet clawd --sheet ~/Downloads/clawd.webp stand=1 run=6 talk=4 walk=5 think=9
+#
+# 登録先は書き込み用のディレクトリ（paths.sh を参照）。配布物と分けているのは、
+# 更新で配布物が丸ごと入れ替わっても、登録したペットが巻き添えで消えないようにするため。
+# 同じ名前があれば登録した側が優先されるので、同梱のペットを差し替えることもできる。
+#
+# 登録しただけでは表示は変わらない。切り替えは ./use-pet <名前>。
+set -uo pipefail
+source "$(cd "$(dirname "$0")" && pwd -P)/paths.sh"
+
+INSTALLED="$PET_DATA/pets"
+BUILTIN="$PET_SCRIPTS/pets"
+
+list() {
+  echo "登録したペット（${INSTALLED}）"
+  local found=false
+  for dir in "$INSTALLED"/*; do
+    [ -f "$dir/manifest.json" ] || continue
+    echo "  $(basename "$dir")"
+    found=true
+  done
+  [ "$found" = false ] && echo "  （まだ無い）"
+
+  echo "同梱のペット（${BUILTIN}）"
+  for dir in "$BUILTIN"/*; do
+    [ -f "$dir/manifest.json" ] || continue
+    echo "  $(basename "$dir")"
+  done
+}
+
+if [ $# -eq 0 ]; then
+  list
+  exit 0
+fi
+
+name="$1"
+shift
+case "$name" in
+  -*) echo "使い方: ./add-pet <名前> <ディレクトリ | --sheet <画像> <動き>=<行> …>" >&2; exit 1 ;;
+esac
+if [ $# -eq 0 ]; then
+  echo "登録するコマの在り処を指定してください（ディレクトリ、または --sheet <画像> …）" >&2
+  exit 1
+fi
+
+target="$INSTALLED/$name"
+mkdir -p "$target" || { echo "作れない: $target" >&2; exit 1; }
+
+if [ "$1" = "--sheet" ]; then
+  shift
+  [ $# -ge 2 ] || { echo "--sheet <画像> <動き>=<行> … の形で指定してください" >&2; exit 1; }
+  sheet="$1"; shift
+  "$PET_SCRIPTS/slice-sheet" "$sheet" "$target" "$@" || exit 1
+else
+  source_dir="${1%/}"
+  [ -f "$source_dir/manifest.json" ] || {
+    echo "manifest.json が無いので登録できない: $source_dir" >&2
+    echo "スプライトシートから作るなら --sheet を使ってください。" >&2
+    exit 1
+  }
+  cp "$source_dir"/*.png "$source_dir/manifest.json" "$target"/ || exit 1
+  # コマの選び方は素材ごとに違うので、あれば一緒に持っていく。
+  [ -f "$source_dir/pet.json" ] && cp "$source_dir/pet.json" "$target"/
+fi
+
+echo "登録した: $name → $target"
+echo "表示を切り替えるなら: ./use-pet $name"

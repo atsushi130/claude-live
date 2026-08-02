@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# 版に依らない入口を書き込み先に作る。SessionStart フックから呼ぶ。
+#
+# 配布物はバージョンごとに別のディレクトリへ入れ替わるため、
+# claude-live の on-start から呼ぶパスを直接書くと更新のたびに切れる。
+#
+#   ~/.claude/plugins/data/claude-live-pet-<マーケットプレイス>/current
+#       → いま入っている版のディレクトリ
+#
+# これを挟めば、呼ぶ側は current 越しの 1 本のパスだけ覚えればよい。
+set -uo pipefail
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "${CLAUDE_PLUGIN_DATA:-}" ] || exit 0
+mkdir -p "$CLAUDE_PLUGIN_DATA"
+ln -sfn "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_DATA/current"
+exit 0

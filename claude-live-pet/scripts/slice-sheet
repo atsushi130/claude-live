@@ -1,0 +1,162 @@
+#!/usr/bin/env swift
+// スプライトシートを行ごとに切り出して、ペット 1 匹分のコマ画像と manifest.json を作る。
+//
+//   ./slice-sheet <シート画像> <出力先> <動き>=<行番号> ...
+//   ./slice-sheet ~/Downloads/clawd.webp pets/clawd stand=1 run=2 talk=4 walk=5 think=9
+//
+//   ./slice-sheet --inspect <シート画像>     格子と各行のコマ数だけを表示する
+//
+// 行番号は 1 始まり。格子は「幅 ÷ 列数」で求めるので、列数と行数を指定できる:
+//   --cols 8 --rows 11
+//
+// **コマは升目のまま切り出し、余白を詰めない。** 詰めると、跳ねる動きのように
+// 升目の中で位置が変わることで表している上下動が消えてしまう。
+import AppKit
+import Foundation
+
+struct Grid {
+    let columns: Int
+    let rows: Int
+    let cellWidth: Int
+    let cellHeight: Int
+}
+
+func fail(_ message: String) -> Never {
+    FileHandle.standardError.write(Data("\(message)\n".utf8))
+    exit(1)
+}
+
+func loadBitmap(_ path: String) -> NSBitmapImageRep {
+    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    guard let data = try? Data(contentsOf: url),
+          let bitmap = NSBitmapImageRep(data: data) else {
+        fail("画像を読めない: \(path)")
+    }
+    return bitmap
+}
+
+/// 升目の中身が全て透明なら空とみなす。行の末尾に余った升目を数えないため。
+func isEmpty(_ bitmap: NSBitmapImageRep, x: Int, y: Int, width: Int, height: Int) -> Bool {
+    for py in stride(from: y, to: min(y + height, bitmap.pixelsHigh), by: 2) {
+        for px in stride(from: x, to: min(x + width, bitmap.pixelsWide), by: 2) {
+            if let color = bitmap.colorAt(x: px, y: py), color.alphaComponent > 0.02 {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+func cell(_ bitmap: NSBitmapImageRep, x: Int, y: Int, width: Int, height: Int) -> Data? {
+    guard let cgImage = bitmap.cgImage,
+          let cropped = cgImage.cropping(to: CGRect(x: x, y: y, width: width, height: height)) else {
+        return nil
+    }
+    return NSBitmapImageRep(cgImage: cropped).representation(using: .png, properties: [:])
+}
+
+// MARK: - 引数
+
+var arguments = Array(CommandLine.arguments.dropFirst())
+var columns = 8
+var rows = 0
+var inspect = false
+
+func takeOption(_ name: String) -> String? {
+    guard let index = arguments.firstIndex(of: name), arguments.count > index + 1 else { return nil }
+    let value = arguments[index + 1]
+    arguments.removeSubrange(index...(index + 1))
+    return value
+}
+
+if let index = arguments.firstIndex(of: "--inspect") {
+    inspect = true
+    arguments.remove(at: index)
+}
+if let value = takeOption("--cols"), let parsed = Int(value) { columns = parsed }
+if let value = takeOption("--rows"), let parsed = Int(value) { rows = parsed }
+
+guard let sheetPath = arguments.first else {
+    fail("使い方: ./slice-sheet <シート画像> <出力先> <動き>=<行番号> ...")
+}
+arguments.removeFirst()
+
+let bitmap = loadBitmap(sheetPath)
+let sheetWidth = bitmap.pixelsWide
+let sheetHeight = bitmap.pixelsHigh
+let cellWidth = sheetWidth / columns
+// 行数の指定が無ければ、升目を正方形に近づける行数を選ぶ。
+if rows == 0 {
+    rows = max(1, Int((Double(sheetHeight) / Double(cellWidth)).rounded()))
+}
+let cellHeight = sheetHeight / rows
+let grid = Grid(columns: columns, rows: rows, cellWidth: cellWidth, cellHeight: cellHeight)
+
+print("シート \(sheetWidth)x\(sheetHeight) / 格子 \(grid.columns)列 × \(grid.rows)行 / 升目 \(grid.cellWidth)x\(grid.cellHeight)")
+
+/// 行に並んでいるコマの数。透明な升目は数えない。
+func frameCount(inRow row: Int) -> Int {
+    var count = 0
+    for column in 0..<grid.columns {
+        let x = column * grid.cellWidth
+        let y = (row - 1) * grid.cellHeight
+        if !isEmpty(bitmap, x: x, y: y, width: grid.cellWidth, height: grid.cellHeight) {
+            count = column + 1
+        }
+    }
+    return count
+}
+
+if inspect {
+    for row in 1...grid.rows {
+        print("  \(row) 行目: \(frameCount(inRow: row)) コマ")
+    }
+    exit(0)
+}
+
+guard let outputPath = arguments.first else {
+    fail("出力先を指定してください")
+}
+arguments.removeFirst()
+
+var wanted: [(name: String, row: Int)] = []
+for argument in arguments {
+    let parts = argument.split(separator: "=", maxSplits: 1)
+    guard parts.count == 2, let row = Int(parts[1]), row >= 1, row <= grid.rows else {
+        fail("<動き>=<行番号> の形で指定してください: \(argument)")
+    }
+    wanted.append((String(parts[0]), row))
+}
+guard !wanted.isEmpty else { fail("切り出す行を 1 つ以上指定してください") }
+
+let output = URL(fileURLWithPath: (outputPath as NSString).expandingTildeInPath)
+try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+
+var animations: [String: [String]] = [:]
+for (name, row) in wanted {
+    let count = frameCount(inRow: row)
+    guard count > 0 else { fail("\(row) 行目は空です") }
+    var files: [String] = []
+    for column in 0..<count {
+        let x = column * grid.cellWidth
+        let y = (row - 1) * grid.cellHeight
+        guard let png = cell(bitmap, x: x, y: y, width: grid.cellWidth, height: grid.cellHeight) else {
+            fail("\(row) 行目 \(column) 列目を切り出せない")
+        }
+        // 並べ替えたときに 10 コマ以上でも順が崩れないよう 2 桁で揃える。
+        let file = String(format: "%@_%02d.png", name, column)
+        try? png.write(to: output.appending(path: file))
+        files.append(file)
+    }
+    animations[name] = files
+    print("  \(name): \(row) 行目から \(count) コマ")
+}
+
+let manifest: [String: Any] = [
+    "width": grid.cellWidth,
+    "height": grid.cellHeight,
+    "animations": animations,
+]
+let data = try! JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
+try! data.write(to: output.appending(path: "manifest.json"))
+print("書き出した: \(output.path)")

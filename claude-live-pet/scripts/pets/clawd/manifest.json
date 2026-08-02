@@ -1,0 +1,46 @@
+{
+  "animations" : {
+    "run" : [
+      "run_00.png",
+      "run_01.png",
+      "run_02.png",
+      "run_03.png",
+      "run_04.png",
+      "run_05.png",
+      "run_06.png",
+      "run_07.png"
+    ],
+    "stand" : [
+      "stand_00.png",
+      "stand_01.png",
+      "stand_02.png",
+      "stand_03.png",
+      "stand_04.png",
+      "stand_05.png",
+      "stand_06.png"
+    ],
+    "talk" : [
+      "talk_00.png",
+      "talk_01.png",
+      "talk_02.png",
+      "talk_03.png"
+    ],
+    "think" : [
+      "think_00.png",
+      "think_01.png",
+      "think_02.png",
+      "think_03.png",
+      "think_04.png",
+      "think_05.png"
+    ],
+    "walk" : [
+      "walk_00.png",
+      "walk_01.png",
+      "walk_02.png",
+      "walk_03.png",
+      "walk_04.png"
+    ]
+  },
+  "height" : 208,
+  "width" : 192
+}

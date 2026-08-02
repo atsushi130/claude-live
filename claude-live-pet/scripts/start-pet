@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# ペットを起動する。claude-live の on-start から呼ぶ想定。
+# すでに動いていれば何もしない。
+set -uo pipefail
+source "$(cd "$(dirname "$0")" && pwd -P)/paths.sh"
+
+pgrep -f "claude-live-pet" >/dev/null 2>&1 && exit 0
+
+# 呼び出し元（MCP サーバー）が終わっても巻き添えで落ちないよう切り離す。
+nohup "$PET_SCRIPTS/claude-live-pet" --data "$PET_DATA" >> "$PET_DATA/pet.log" 2>&1 &
+exit 0
