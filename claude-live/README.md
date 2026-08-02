@@ -52,7 +52,8 @@ claude-live/                         プラグイン本体
 読み上げエンジンの導入も不要で、初回起動時に `ensure-engine` が面倒を見る。
 
 話者や速度を変えるときだけ `use-engine` を使う（下記「切り替える」）。
-これは user スコープの MCP 登録を書き足すので、プラグインの登録より優先される。
+これは `~/.config/claude-live/config.json` に書くので、プラグインで入れても
+手で繋いでも同じように効く。
 
 ### 手で繋ぐ場合
 
@@ -64,8 +65,13 @@ ln -sfn "$PWD/skills/claude-live" ~/.claude/skills/claude-live
 ln -sfn "$PWD/skills/fixing-pronunciation" ~/.claude/skills/fixing-pronunciation
 
 # 2. MCP サーバーを登録する（user スコープに書き込む）
-skills/claude-live/scripts/use-engine aivis
+claude mcp add-json claude-live \
+  "{\"type\":\"stdio\",\"command\":\"$PWD/skills/claude-live/scripts/claude-live\",\"args\":[\"mcp\"],\"timeout\":3900000}" \
+  --scope user
 ```
+
+`timeout` は 65 分。ツール側の録音上限（60 分）と stdio の既定（30 分）の
+どちらより長くしておかないと、沈黙して待っている間に打ち切られる。
 
 3 つ目は `~/.claude/settings.json` の `SessionEnd` に `stop-engines` を追記すること
 （下記「終了時にプロセスを片付ける」）。
@@ -156,15 +162,25 @@ CPU アーキテクチャは `uname -m` から判定し、`AivisSpeech-macOS-{ar
 ### 切り替える
 
 ```bash
-skills/claude-live/scripts/use-engine aivis              # AivisSpeech の既定話者
-skills/claude-live/scripts/use-engine aivis 1937616896   # 話者を指定（voices で確認できる）
-skills/claude-live/scripts/use-engine auto               # 使えるものを自動で選ぶ
+skills/claude-live/scripts/use-engine aivis                   # AivisSpeech の既定話者
+skills/claude-live/scripts/use-engine aivis 1937616896        # 話者を指定（voices で確認できる）
+skills/claude-live/scripts/use-engine aivis 1937616896 1.08   # 速度も指定（既定 1.15）
+skills/claude-live/scripts/use-engine auto                    # 使えるものを自動で選ぶ
 ```
 
-MCP の登録を書き換えるだけなので、戻すのも同じ 1 コマンド。反映は次のセッションから。
+書き込み先は `~/.config/claude-live/config.json` の 1 ファイルだけなので、戻すのも
+同じ 1 コマンド。反映は次のセッションから。
 
-登録する `timeout` は 65 分。ツール側の録音上限（60 分）と stdio の既定（30 分）の
-どちらより長くしておかないと、沈黙して待っている間に打ち切られる。
+**設定を MCP の登録引数ではなくファイルに置いている。** プラグインで入れた場合の
+登録は配布物の `.mcp.json` に固定されていて、そこに話者を書いても利用者ごとの設定に
+ならない。ファイルなら、プラグインで入れても手で繋いでも同じ設定が効く。
+
+優先順位はコマンドライン引数 → このファイル → 組み込みの既定値（話者はエンジンが
+持つ先頭のスタイル、速度 1.15）。以前の `use-engine` は MCP の登録に `--speaker` を
+書いていたため、その登録が残っていると引数が優先されてファイルの設定が効かない。
+`use-engine` は残っていれば知らせる。外すのは `claude mcp remove claude-live -s user`。
+
+どの話者で読まれるかは `claude-live voices`（`←` が付く）と `claude-live check` で確認できる。
 
 ## 終了時にプロセスを片付ける
 
@@ -294,8 +310,12 @@ skills/claude-live/scripts/claude-live bench      # 合成時間を測る
 ja-JP 対応     : あり
 ja-JP 導入状況 : 導入済み
 読み上げ経路   : AivisSpeech（話者 1937616896）
+内蔵音声       : Kyoko(q1), Eddy(q1), ...
+設定ファイル   : /Users/<ユーザー>/.config/claude-live/config.json
 認識モデル     : 利用可能
 ```
+
+`設定ファイル` が「未作成」なら話者と速度は既定のまま。`use-engine` で書ける。
 
 マイクが未許可なら、システム設定 → プライバシーとセキュリティ → マイク で
 ターミナルを許可する。一覧に出てこない場合は `tccutil reset Microphone <bundle-id>`

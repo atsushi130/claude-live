@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
-# 読み上げエンジンを切り替える。
+# 読み上げエンジン・話者・速度を切り替える。
 #
 #   ./use-engine aivis                  AivisSpeech の既定話者にする
-#   ./use-engine aivis 888753763        話者を指定する
-#   ./use-engine aivis 888753763 1.0    読み上げ速度も指定する（既定 1.15）
+#   ./use-engine aivis 1937616896       話者を指定する
+#   ./use-engine aivis 1937616896 1.08  読み上げ速度も指定する（既定 1.15）
 #   ./use-engine auto                   使えるものを自動で選ぶ（AivisSpeech 優先）
 #
-# 話者 ID は ./claude-live voices --engine <名前> で確認できる。
-# 切り替えは MCP の登録を書き換えるだけなので、戻すのも同じ 1 コマンド。
+# 話者 ID は ./claude-live voices で確認できる。
 #
-# timeout は 65 分。ツール側の録音上限（60 分）と stdio の既定（30 分）の
-# どちらより長くしておかないと、沈黙して待っている間に打ち切られる。
+# 設定は ~/.config/claude-live/config.json に書く。MCP の登録引数ではなく
+# ファイルに置くのは、プラグインで入れた場合の登録が配布物の .mcp.json に
+# 固定されていて、そこに話者を書いても利用者ごとの設定にならないため。
+# ファイルなら、プラグインで入れても手で繋いでも同じ設定が効く。
+#
+# 指定しなかった項目は既定に戻る（話者はエンジンが持つ先頭のスタイル、速度は 1.15）。
+# 反映は次のセッションから。
 set -euo pipefail
 
-# 実行ファイルはこのスクリプトと同じ scripts/ に置かれている。
-# 絶対パスに解決しておくのは、MCP の登録にそのまま書き込むため。
-BIN="$(cd "$(dirname "$0")" && pwd)/claude-live"
+CONFIG_DIR="$HOME/.config/claude-live"
+CONFIG="$CONFIG_DIR/config.json"
+
 engine="${1:-}"
 speaker="${2:-}"
 speed="${3:-}"
@@ -28,21 +32,33 @@ case "$engine" in
     ;;
 esac
 
-args='"mcp"'
-if [ "$engine" != "auto" ]; then
-  args="$args,\"--engine\",\"$engine\""
+# JSON を組み立てる前に形を確かめる。壊れた値を書くと、次の起動で設定ごと
+# 読み飛ばされて「切り替えたのに変わらない」という分かりにくい失敗になる。
+if [ -n "$speaker" ] && ! printf '%s' "$speaker" | grep -qE '^[0-9]+$'; then
+  echo "話者 ID は数値で指定してください（./claude-live voices で確認できる）: $speaker" >&2
+  exit 1
 fi
-if [ -n "$speaker" ]; then
-  args="$args,\"--speaker\",\"$speaker\""
-fi
-if [ -n "$speed" ]; then
-  args="$args,\"--speed\",\"$speed\""
+if [ -n "$speed" ] && ! printf '%s' "$speed" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+  echo "速度は数値で指定してください: $speed" >&2
+  exit 1
 fi
 
-claude mcp remove claude-live -s user >/dev/null 2>&1 || true
-claude mcp add-json claude-live \
-  "{\"type\":\"stdio\",\"command\":\"$BIN\",\"args\":[$args],\"timeout\":3900000}" \
-  --scope user >/dev/null
+fields="\"engine\": \"$engine\""
+[ -n "$speaker" ] && fields="$fields, \"speaker\": $speaker"
+[ -n "$speed" ] && fields="$fields, \"speed\": $speed"
 
-echo "読み上げエンジンを $engine に切り替えた。新しいセッションから有効になる。"
-claude mcp get claude-live | sed -n '1,7p'
+mkdir -p "$CONFIG_DIR"
+printf '{ %s }\n' "$fields" > "$CONFIG"
+
+echo "設定を書いた: $CONFIG"
+cat "$CONFIG"
+echo "新しいセッションから有効になる。"
+
+# 話者を引数で持つ古い登録が残っていると、そちらが設定ファイルより優先されて
+# 「切り替えたのに変わらない」ことになる。気付けるように知らせる。
+if claude mcp get claude-live 2>/dev/null | grep -q -- "--speaker"; then
+  echo
+  echo "注意: claude mcp の登録 claude-live に --speaker が残っている。" >&2
+  echo "      引数の方が優先されるため、外さないとこの設定は効かない:" >&2
+  echo "      claude mcp remove claude-live -s user" >&2
+fi
