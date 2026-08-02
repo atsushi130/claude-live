@@ -8,7 +8,7 @@ description: >
 argument-hint: [話したいこと / 頼みたいこと]
 user-invocable: true
 context: fork
-agent: claude-live
+agent: claude-live:claude-live
 disable-model-invocation: true
 ---
 

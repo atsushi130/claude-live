@@ -251,9 +251,15 @@ skills/claude-live/scripts/stop-engines
 MCP サーバーはセッションが続く限り生きているので、**サーバーの終了を待っていると
 音声を終えても後片付けが始まらない**。そこで `SubagentStop` フックを使う。
 
-スキルは `agent: claude-live` で専用のエージェントとして走るため、
+スキルは `agent: claude-live:claude-live` で専用のエージェントとして走るため、
 `SubagentStop` のペイロードの `agent_type` を見れば、終わったのが音声セッションか
 他のサブエージェントかを区別できる。`end-voice-session` がこれを判定して `on-end` を呼ぶ。
+
+**エージェント名はプラグイン名で修飾する。** `agent: claude-live` と書くと解決されず、
+黙って `general-purpose` にフォールバックする（実測）。フォールバックしても
+スキルは動くが `agent_type` が一致しなくなるため、終わりを検知できない。
+プラグインを使わず手で繋いでいる場合もこの名前は解決されないので、
+音声の終わりでは片付かず、セッション終了時の片付けだけが効く。
 
 「他のセッションがまだ音声を使っているか」は、`~/.local/state/claude-live/voice/<PID>`
 の印で数える。中身はそのサーバーを抱えている Claude Code のセッション ID。
