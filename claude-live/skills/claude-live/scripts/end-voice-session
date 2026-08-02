@@ -17,6 +17,15 @@ set -uo pipefail
 
 MARKS="$HOME/.local/state/claude-live/voice"
 ON_END="$HOME/.config/claude-live/on-end"
+STATE="$HOME/.local/state/claude-live"
+
+# 何が起きたかを追えるようにしておく。片付かないときに知りたいのは
+# 「呼ばれていない」のか「呼ばれたが素通りした」のかで、外からは区別できない。
+# 状態ディレクトリを作っていない環境では書かない。
+log() {
+  [ -d "$STATE" ] || return 0
+  printf '%s [end-voice-session] %s\n' "$(date '+%m-%d %H:%M:%S')" "$*" >> "$STATE/hook.log"
+}
 
 payload=$(cat)
 
@@ -36,24 +45,34 @@ EOF
 # セッションごと終わるなら、誰のサブエージェントだったかは問わない。
 # それ以外は claude-live の音声セッションが終わったときだけ動く。
 # プラグインのエージェントは名前空間つきで見えるが、素の名前も受けておく。
+log "受信 event=$event agent_type=$agent_type session=$session_id"
+
 if [ "$event" != "SessionEnd" ]; then
   case "$agent_type" in
     claude-live | claude-live:claude-live) ;;
-    *) exit 0 ;;
+    *) log "対象外の agent_type なので何もしない"; exit 0 ;;
   esac
 fi
 
 # このセッションが置いた印だけを外す。他のセッションの音声は続いているかもしれない。
+removed=0
 if [ -d "$MARKS" ] && [ "$session_id" != "-" ]; then
   for mark in "$MARKS"/*; do
     [ -f "$mark" ] || continue
     if [ "$(cat "$mark" 2>/dev/null)" = "$session_id" ]; then
       rm -f "$mark"
+      removed=$((removed + 1))
     fi
   done
 fi
+log "自分の印を $removed 件外した。残り: [$(ls "$MARKS" 2>/dev/null | tr '\n' ' ')]"
 
 # 片付けの中身は利用者に任せる。置いていなければ何もしない。
 # 残った印を見て「他のセッションがまだ音声中か」を判断するのは on-end 側の仕事。
-[ -x "$ON_END" ] && "$ON_END"
+if [ -x "$ON_END" ]; then
+  "$ON_END"
+  log "on-end を呼んだ（終了コード $?）"
+else
+  log "on-end が無いので何もしない"
+fi
 exit 0
