@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/claude-live/scripts/stop-engines",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

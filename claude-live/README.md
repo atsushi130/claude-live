@@ -7,7 +7,8 @@
 ## 構成
 
 ```
-claude-live/
+.claude-plugin/marketplace.json      配布元の定義（リポジトリのルート）
+claude-live/                         プラグイン本体
 ├── skills/claude-live/
 │   ├── SKILL.md                     音声で操作するときの作法
 │   ├── scripts/
@@ -18,9 +19,15 @@ claude-live/
 │   │   └── stop-engines             読み上げエンジンを止める（SessionEnd フック用）
 │   └── resources/
 │       └── dictionary.tsv           読み方の辞書（自由に編集できる）
+├── skills/fixing-pronunciation/
+│   └── SKILL.md                     読み間違いを辞書で直すときの手順
 ├── .claude-plugin/plugin.json       プラグインの定義
-└── .mcp.json                        MCP サーバーの定義
+├── .mcp.json                        MCP サーバーの定義
+└── hooks/hooks.json                 SessionEnd でエンジンを止める
 ```
+
+`skills/` `.mcp.json` `hooks/hooks.json` はいずれもプラグインルート直下に置く決まりで、
+この位置にあれば自動で見つかる。`plugin.json` に書き足す必要はない。
 
 実行ファイルと辞書はスキルディレクトリの中に置いている。`~/.claude/skills/claude-live`
 への symlink 1 本で一式に到達できるので、スキル単体で完結する。
@@ -33,23 +40,35 @@ claude-live/
 
 ## 導入する
 
-現状は 3 か所を手で繋いでいる。
+プラグインとして入れる。
+
+```
+/plugin marketplace add <このリポジトリ>
+/plugin install claude-live@claude-live
+```
+
+スキルの認識、MCP サーバーの登録、終了時の後片付けはこれで揃う。MCP の
+`command` は `${CLAUDE_PLUGIN_ROOT}` から解決されるので、置き場所を書き換える必要はない。
+読み上げエンジンの導入も不要で、初回起動時に `ensure-engine` が面倒を見る。
+
+話者や速度を変えるときだけ `use-engine` を使う（下記「切り替える」）。
+これは user スコープの MCP 登録を書き足すので、プラグインの登録より優先される。
+
+### 手で繋ぐ場合
+
+プラグインを使わずに動かすなら 3 か所を自分で繋ぐ。
 
 ```bash
-# 1. スキルを認識させる
+# 1. スキルを認識させる（スキルごとに 1 本ずつ張る）
 ln -sfn "$PWD/skills/claude-live" ~/.claude/skills/claude-live
+ln -sfn "$PWD/skills/fixing-pronunciation" ~/.claude/skills/fixing-pronunciation
 
 # 2. MCP サーバーを登録する（user スコープに書き込む）
 skills/claude-live/scripts/use-engine aivis
 ```
 
 3 つ目は `~/.claude/settings.json` の `SessionEnd` に `stop-engines` を追記すること
-（下記「終了時にプロセスを片付ける」）。読み上げエンジンの導入は不要で、
-初回起動時に `ensure-engine` が面倒を見る。
-
-`.mcp.json` と `.claude-plugin/plugin.json` はプラグインとして配布するための定義で、
-**現在はプラグインとして読み込んでいない**。プラグインにすれば MCP の登録は
-`${CLAUDE_PLUGIN_ROOT}` から自動で解決され、上の 2 と 3 が不要になる。
+（下記「終了時にプロセスを片付ける」）。
 
 ## 何をするもの
 
@@ -167,7 +186,10 @@ Claude Code が標準入力を閉じた時点で終了する。**ツールの実
 ### 読み上げエンジン
 
 エンジンは別プロセスで、起動元から切り離されて残る。次のセッションが起動済みのものを
-再利用できる利点があるが、使わない間もメモリを占有する。止めるには次を登録する。
+再利用できる利点があるが、使わない間もメモリを占有する。
+
+**プラグインで入れた場合は `hooks/hooks.json` に同梱してあるので登録は要らない。**
+手で繋いでいる場合は `~/.claude/settings.json` に次を書く。
 
 ```json
 "SessionEnd": [
@@ -279,16 +301,6 @@ ja-JP 導入状況 : 導入済み
 ターミナルを許可する。一覧に出てこない場合は `tccutil reset Microphone <bundle-id>`
 （例: `com.googlecode.iterm2`）を実行し、ターミナルを Cmd+Q で終了して開き直す。
 
-## 単体で試す
-
-```bash
-skills/claude-live/scripts/claude-live speak "聞こえていますか"
-skills/claude-live/scripts/claude-live listen        # 話しかけると書き起こす（無音 3 秒で確定）
-skills/claude-live/scripts/claude-live listen 1.5    # 確定を速くする
-```
-
-`listen` は入力レベルの最大値と閾値も表示する。声が届いていないときの切り分けに使う。
-
 ## 計測済みの値
 
 | 項目 | 実測 |
@@ -366,5 +378,9 @@ TTL は 5 分**なので、5 分を超えて待つとキャッシュが失効し
 - Bluetooth ヘッドフォンが出力専用モードのままだとマイクが応答しない。
   その場合は「音声データが 1 件も届かなかった」と明示して終わるので、
   システム設定 → サウンド → 入力 で別のマイクを選ぶ
-- プラグインとしての読み込みは未検証。現在はスキルの symlink と
+- **プラグインとして実際にインストールした動作は未検証。** 定義が正しいことは
+  `claude plugin validate` で確認済み（プラグイン・配布元とも通る）だが、
+  インストールして動かしたわけではない。現在はスキルの symlink と
   `claude mcp add-json` による user スコープ登録で動かしている
+- プラグインとして入れると MCP のツール名に名前空間が付く。
+  `~/.claude/settings.json` の許可ルールを古い名前のままにしていると、毎回確認を求められる
