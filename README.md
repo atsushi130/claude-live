@@ -26,6 +26,20 @@ claude-live/                         プラグイン本体
 ├── .claude-plugin/plugin.json       プラグインの定義
 ├── .mcp.json                        MCP サーバーの定義
 └── hooks/hooks.json                 SessionEnd / SubagentStop のフック
+
+claude-live-pet/                     画面にドット絵を出すプラグイン（任意）
+├── skills/add-pet/SKILL.md          自分のペットを登録する
+├── skills/use-pet/SKILL.md          表示するペットを選ぶ・見た目を変える
+├── scripts/
+│   ├── claude-live-pet              オーバーレイ本体（単体で動く実行ファイル）
+│   ├── start-pet / stop-pet         claude-live の on-start / on-end から呼ぶ
+│   ├── add-pet / use-pet            スキルの中身
+│   ├── slice-sheet                  スプライトシートを行ごとに切り出す
+│   ├── link-current                 版に依らない入口を作る（SessionStart フック用）
+│   ├── paths.sh                     配布物と書き込み先の決め方
+│   └── pets/clawd/                  同梱のペット（既定）
+├── .claude-plugin/plugin.json       プラグインの定義
+└── hooks/hooks.json                 SessionStart のフック
 ```
 
 `skills/` `.mcp.json` `hooks/hooks.json` はいずれもプラグインルート直下に置く決まりで、
@@ -47,6 +61,7 @@ claude-live/                         プラグイン本体
 ```
 /plugin marketplace add <このリポジトリ>
 /plugin install claude-live@claude-live
+/plugin install claude-live-pet@claude-live   # 任意。画面にドット絵を出す
 ```
 
 スキルの認識、MCP サーバーの登録、終了時の後片付けはこれで揃う。MCP の
@@ -246,6 +261,8 @@ claude-live/skills/claude-live/scripts/stop-engines
 加えて `~/.local/state/claude-live/` を作っておくと、いま何をしているかが
 `state`（`thinking` / `speaking` / `idle`）に書かれる。
 
+この 2 つと `state` を使う実装が **claude-live-pet**（下記）。
+
 ### 終わりをどう検知するか
 
 MCP サーバーはセッションが続く限り生きているので、**サーバーの終了を待っていると
@@ -278,6 +295,87 @@ MCP サーバーは標準入力が閉じれば自分で印を外すが、**強�
 そのため `end-voice-session` は `SessionEnd` からも呼ぶ。こちらは harness が呼ぶので
 サーバーの死に方に依存しない。`SessionEnd` のペイロードに `agent_type` は無いが、
 セッションごと終わる以上どのサブエージェントだったかは問わなくてよい。
+
+## 画面にドット絵を出す（claude-live-pet）
+
+別のプラグインとして分けてある。入れると、話しているとき・考えているときで動きが変わる
+ドット絵が画面の最前面に出る。**claude-live 単体では何も出ないし、入れなくても音声操作は動く。**
+
+```
+/plugin install claude-live-pet@claude-live
+```
+
+起動と停止は claude-live の `on-start` / `on-end` から呼ぶ。次の 1 行ずつを足す。
+
+```bash
+# ~/.config/claude-live/on-start
+"$HOME/.claude/plugins/data/claude-live-pet-claude-live/current/scripts/start-pet"
+
+# ~/.config/claude-live/on-end
+"$HOME/.claude/plugins/data/claude-live-pet-claude-live/current/scripts/stop-pet"
+```
+
+`current` は**版に依らない入口**で、`SessionStart` のたびに今入っている版へ張り直される。
+配布物はバージョンごとに別ディレクトリへ入れ替わるため、直接パスを書くと更新で切れる。
+
+### ペットを選ぶ・増やす
+
+スキルが 2 つ付いてくる。`/add-pet` と `/use-pet`。中身は次のコマンドで、直接も呼べる
+（`<入口>` は上の `.../current/scripts`）。
+
+```bash
+<入口>/use-pet              # いま選んでいるものと、選べるものを表示する
+<入口>/use-pet 9s           # 切り替える（動いたまま 0.2 秒ほどで反映される）
+
+<入口>/add-pet 9s ~/somewhere/9s-frames                      # コマ一式を登録する
+<入口>/add-pet clawd --sheet ~/Downloads/clawd.webp \
+  stand=1 run=6 talk=4 walk=5 think=9                        # シートから切り出して登録する
+
+<入口>/slice-sheet --inspect ~/Downloads/clawd.webp          # 格子と各行のコマ数を見る
+```
+
+既定は同梱の `clawd`（Anthropic のキャラクター）。`<動き>=<行番号>` は 1 始まり。
+格子は「幅 ÷ 列数」で求め、行数は升目が正方形に近くなるように決める。合わなければ
+`--cols` `--rows` で指定する。**コマは升目のまま切り出し、余白を詰めない。**
+詰めると、升目の中で位置が変わることで表している上下動が消えてしまう。
+
+ペット 1 匹は次の 3 つでできている。
+
+| ファイル | 中身 |
+| --- | --- |
+| `*.png` | コマ画像 |
+| `manifest.json` | 升目の大きさと、動きごとのコマ一覧 |
+| `pet.json` | 沈黙中の出やすさと、動きごとの使うコマ・送りの速さ（任意） |
+
+**ファイル名は自由**だが、コマの順は**ファイル名の並べ替え順**で決まる。10 コマ以上あるときは
+0 埋めしないと `frame_10` が `frame_2` より前に来る（`slice-sheet` が 2 桁で書き出すのはこのため）。
+`stand` は必須で、無いと起動できない。窓の大きさもこのコマから決まる。
+
+### 見た目を変える
+
+書き込み用の `config.json`（置き場所は `use-pet` の 1 行目に出る）を書き換えると、
+次の監視周期（0.2 秒）で反映される。
+
+- `pet` 表示するペットの名前
+- `height` 表示する高さ（px）
+- `flipped` 左右反転
+- `idle` 沈黙中に選ばれる動き。**同じ名前を複数書くと出やすくなる**（重みを並びの回数で表す）
+- `sequences` 動きごとに、使うコマ番号と 1 コマの表示時間
+
+`idle` と `sequences` の既定はペット側の `pet.json` にある。**コマの選び方と送りの速さは
+素材ごとに違うため**で、`config.json` に書いたものが動きごとに上書きする。
+ただし監視しているのは `config.json` だけなので、`pet.json` とコマ画像の差し替えは
+起動し直しが要る。**試しながら決めるときは `config.json` 側に書く。**
+
+### 置き場所
+
+| | 場所 | 中身 |
+| --- | --- | --- |
+| 配布物 | `~/.claude/plugins/cache/<マーケットプレイス>/claude-live-pet/<版>/` | バイナリ・同梱ペット |
+| 書き込み | `~/.claude/plugins/data/claude-live-pet-<マーケットプレイス>/` | 選んだペット・表示位置・登録したペット |
+
+**分けているのは、配布物がバージョンごとに別ディレクトリへ作り直されるため。**
+古い版には `.orphaned_at` が付いていずれ消えるので、そこへ書くと更新のたびに失われる。
 
 ## 読み方の辞書
 
