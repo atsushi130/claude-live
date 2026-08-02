@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# 音声のやり取りが終わったときに呼ぶ。SubagentStop フックから使う想定。
+# 音声のやり取りが終わったときに呼ぶ。SubagentStop と SessionEnd の両方から使う。
 #
-# claude-live スキルは専用のエージェント（agent: claude-live）で走るので、
-# SubagentStop のペイロードにある agent_type を見れば、終わったのが音声セッションか
-# 他のサブエージェントかを区別できる。他のものなら何もしない。
+# SubagentStop: claude-live スキルは専用のエージェント（agent: claude-live:claude-live）で
+# 走るので、ペイロードの agent_type を見れば、終わったのが音声セッションか他の
+# サブエージェントかを区別できる。他のものなら何もしない。
 #
-# MCP サーバーはセッションが続く限り生きているため、サーバーの終了を待っていると
-# 音声を終えてもオーバーレイが残る。ここで自分のセッションの印を外し、
-# 利用者の on-end に「このセッションは音声を使い終えた」と伝える。
+# SessionEnd: セッションごと終わるので、誰のサブエージェントかは問わない。
+# **こちらが要るのは、MCP サーバーが必ずしも自分で片付けられないため。**
+# 標準入力が閉じれば印を外してから終わるが、強制終了させられるとその機会がない。
+# 印が残るとオーバーレイが消えず、次に「他が使用中」と誤判定される元にもなる。
+# SessionEnd は harness が呼ぶので、サーバーの死に方に依存しない。
 #
-# 標準入力に来る JSON（session_id / agent_type を含む）を読む。手で試すときは:
-#   echo '{"agent_type":"claude-live","session_id":"..."}' | ./end-voice-session
+# 標準入力に来る JSON（session_id / agent_type / hook_event_name）を読む。手で試すときは:
+#   echo '{"hook_event_name":"SubagentStop","agent_type":"claude-live:claude-live","session_id":"..."}' | ./end-voice-session
 set -uo pipefail
 
 MARKS="$HOME/.local/state/claude-live/voice"
@@ -19,7 +21,7 @@ ON_END="$HOME/.config/claude-live/on-end"
 payload=$(cat)
 
 # jq は入っているとは限らないので python3 で読む。壊れた JSON なら空を返して黙って終わる。
-read -r agent_type session_id <<EOF
+read -r event agent_type session_id <<EOF
 $(printf '%s' "$payload" | python3 -c '
 import json, sys
 try:
@@ -27,15 +29,19 @@ try:
 except Exception:
     print(" ")
     raise SystemExit
-print(data.get("agent_type") or "-", data.get("session_id") or "-")
+print(data.get("hook_event_name") or "-", data.get("agent_type") or "-", data.get("session_id") or "-")
 ' 2>/dev/null)
 EOF
 
-# プラグインのエージェントは名前空間つきで見えることがあるため、どちらも受ける。
-case "$agent_type" in
-  claude-live | claude-live:claude-live) ;;
-  *) exit 0 ;;
-esac
+# セッションごと終わるなら、誰のサブエージェントだったかは問わない。
+# それ以外は claude-live の音声セッションが終わったときだけ動く。
+# プラグインのエージェントは名前空間つきで見えるが、素の名前も受けておく。
+if [ "$event" != "SessionEnd" ]; then
+  case "$agent_type" in
+    claude-live | claude-live:claude-live) ;;
+    *) exit 0 ;;
+  esac
+fi
 
 # このセッションが置いた印だけを外す。他のセッションの音声は続いているかもしれない。
 if [ -d "$MARKS" ] && [ "$session_id" != "-" ]; then

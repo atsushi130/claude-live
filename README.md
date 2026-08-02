@@ -16,7 +16,7 @@ claude-live/                         プラグイン本体
 │   │   ├── start-claude-live        Claude Code を起動して音声操作を始める
 │   │   ├── ensure-engine            読み上げエンジンが無ければ導入する
 │   │   ├── use-engine               読み上げエンジンを切り替える
-│   │   ├── end-voice-session        音声のやり取りの終わりを知らせる（SubagentStop フック用）
+│   │   ├── end-voice-session        音声の終わりを知らせる（SubagentStop / SessionEnd フック用）
 │   │   └── stop-engines             読み上げエンジンを止める（SessionEnd フック用）
 │   └── resources/
 │       └── dictionary.tsv           読み方の辞書（自由に編集できる）
@@ -38,7 +38,7 @@ claude-live/                         プラグイン本体
 **配布先に Swift の開発環境は要らない**。必要なのは macOS 26 以降
 （`SpeechAnalyzer` / `SpeechTranscriber` を使うため）。
 
-`skills/claude-live/scripts/claude-live` はビルド済みの実行ファイルで、これ単体で動く。
+`claude-live/skills/claude-live/scripts/claude-live` はビルド済みの実行ファイルで、これ単体で動く。
 
 ## 導入する
 
@@ -63,12 +63,12 @@ claude-live/                         プラグイン本体
 
 ```bash
 # 1. スキルを認識させる（スキルごとに 1 本ずつ張る）
-ln -sfn "$PWD/skills/claude-live" ~/.claude/skills/claude-live
-ln -sfn "$PWD/skills/fixing-pronunciation" ~/.claude/skills/fixing-pronunciation
+ln -sfn "$PWD/claude-live/skills/claude-live" ~/.claude/skills/claude-live
+ln -sfn "$PWD/claude-live/skills/fixing-pronunciation" ~/.claude/skills/fixing-pronunciation
 
 # 2. MCP サーバーを登録する（user スコープに書き込む）
 claude mcp add-json claude-live \
-  "{\"type\":\"stdio\",\"command\":\"$PWD/skills/claude-live/scripts/claude-live\",\"args\":[\"mcp\"],\"timeout\":3900000}" \
+  "{\"type\":\"stdio\",\"command\":\"$PWD/claude-live/skills/claude-live/scripts/claude-live\",\"args\":[\"mcp\"],\"timeout\":3900000}" \
   --scope user
 ```
 
@@ -150,8 +150,8 @@ AivisHub のモデルを追加するときは、`ACML-NC`（非商用）ライ�
 `/Applications` に置く。Homebrew の cask が無いため dmg を直接扱っている。
 
 ```bash
-skills/claude-live/scripts/ensure-engine            # 未導入なら導入する
-skills/claude-live/scripts/ensure-engine --dry-run  # 何を落とすかだけ表示する
+claude-live/skills/claude-live/scripts/ensure-engine            # 未導入なら導入する
+claude-live/skills/claude-live/scripts/ensure-engine --dry-run  # 何を落とすかだけ表示する
 ```
 
 CPU アーキテクチャは `uname -m` から判定し、`AivisSpeech-macOS-{arm64|x64}-*.dmg`
@@ -164,10 +164,10 @@ CPU アーキテクチャは `uname -m` から判定し、`AivisSpeech-macOS-{ar
 ### 切り替える
 
 ```bash
-skills/claude-live/scripts/use-engine aivis                   # AivisSpeech の既定話者
-skills/claude-live/scripts/use-engine aivis 1937616896        # 話者を指定（voices で確認できる）
-skills/claude-live/scripts/use-engine aivis 1937616896 1.08   # 速度も指定（既定 1.15）
-skills/claude-live/scripts/use-engine auto                    # 使えるものを自動で選ぶ
+claude-live/skills/claude-live/scripts/use-engine aivis                   # AivisSpeech の既定話者
+claude-live/skills/claude-live/scripts/use-engine aivis 1937616896        # 話者を指定（voices で確認できる）
+claude-live/skills/claude-live/scripts/use-engine aivis 1937616896 1.08   # 速度も指定（既定 1.15）
+claude-live/skills/claude-live/scripts/use-engine auto                    # 使えるものを自動で選ぶ
 ```
 
 書き込み先は `~/.config/claude-live/config.json` の 1 ファイルだけなので、戻すのも
@@ -220,7 +220,7 @@ Claude Code が標準入力を閉じた時点で終了する。**ツールの実
 手で実行してもよい。
 
 ```bash
-skills/claude-live/scripts/stop-engines
+claude-live/skills/claude-live/scripts/stop-engines
 ```
 
 **止めると次に使うときモデルの読み込みを待つ**（AivisSpeech は 60 秒以上）。
@@ -269,17 +269,27 @@ MCP サーバーはセッションが続く限り生きているので、**サ�
 印は外から消される前提で扱う。消えたあとに話しかけられれば置き直し、
 `on-start` を鳴らし直すので、同じセッションで何度でも始め直せる。
 
+### サーバーの死に方に頼らない
+
+MCP サーバーは標準入力が閉じれば自分で印を外すが、**強制終了させられるとその機会がない。**
+実際、印だけが残ってオーバーレイが消えないことがあった（サーバーは終了済みなのに
+`~/.local/state/claude-live/voice/<PID>` が残っていた）。
+
+そのため `end-voice-session` は `SessionEnd` からも呼ぶ。こちらは harness が呼ぶので
+サーバーの死に方に依存しない。`SessionEnd` のペイロードに `agent_type` は無いが、
+セッションごと終わる以上どのサブエージェントだったかは問わなくてよい。
+
 ## 読み方の辞書
 
-`skills/claude-live/resources/dictionary.tsv` に「表層形 / 読み / アクセント型」をタブ区切りで書く。
+`claude-live/skills/claude-live/resources/dictionary.tsv` に「表層形 / 読み / アクセント型」をタブ区切りで書く。
 **リビルドは不要。** 編集内容は `dict preview` では即座に確認でき、
 読み上げに反映されるのは次のセッションから（MCP サーバーが起動時に読み込むため）。
 
 ```bash
-skills/claude-live/scripts/claude-live dict preview "PRをrebaseする"   # 読み方を確認（音は鳴らない）
-skills/claude-live/scripts/claude-live dict install                    # エンジンの辞書に反映
-skills/claude-live/scripts/claude-live dict list                       # 登録内容を確認
-skills/claude-live/scripts/claude-live dict clear                      # 全削除
+claude-live/skills/claude-live/scripts/claude-live dict preview "PRをrebaseする"   # 読み方を確認（音は鳴らない）
+claude-live/skills/claude-live/scripts/claude-live dict install                    # エンジンの辞書に反映
+claude-live/skills/claude-live/scripts/claude-live dict list                       # 登録内容を確認
+claude-live/skills/claude-live/scripts/claude-live dict clear                      # 全削除
 ```
 
 ### 2 つの経路で処理している
@@ -316,8 +326,8 @@ Style-Bert-VITS2 の英語 G2P は優秀で `Swift` `commit` `deploy` などは�
 音声で操作したいコードベースで起動する。
 
 ```bash
-skills/claude-live/scripts/start-claude-live
-skills/claude-live/scripts/start-claude-live "認証の設計を相談したい"
+claude-live/skills/claude-live/scripts/start-claude-live
+claude-live/skills/claude-live/scripts/start-claude-live "認証の設計を相談したい"
 ```
 
 このスクリプトは「毎ターン必ず思考する」設定だけを外して `/claude-live` を呼ぶ。
@@ -337,10 +347,10 @@ skills/claude-live/scripts/start-claude-live "認証の設計を相談したい"
 ## 状態を確認する
 
 ```bash
-skills/claude-live/scripts/claude-live check      # マイク権限・認識モデル・読み上げ経路
-skills/claude-live/scripts/claude-live engines    # エンジンの導入状況
-skills/claude-live/scripts/claude-live voices     # 話者一覧
-skills/claude-live/scripts/claude-live bench      # 合成時間を測る
+claude-live/skills/claude-live/scripts/claude-live check      # マイク権限・認識モデル・読み上げ経路
+claude-live/skills/claude-live/scripts/claude-live engines    # エンジンの導入状況
+claude-live/skills/claude-live/scripts/claude-live voices     # 話者一覧
+claude-live/skills/claude-live/scripts/claude-live bench      # 合成時間を測る
 ```
 
 ```
@@ -421,7 +431,7 @@ TTL は 5 分**なので、5 分を超えて待つとキャッシュが失効し
 
 費用を抑えるには次の 2 点が効く。
 
-- **新しいセッションで始める**（`skills/claude-live/scripts/start-claude-live` はそうしている）。
+- **新しいセッションで始める**（`claude-live/skills/claude-live/scripts/start-claude-live` はそうしている）。
   キャッシュ読み出しはコンテキストの大きさに比例するので、長い作業の続きで音声を始めると往復ごとに高くつく
 - **常駐させるなら `context: fork` が効く**。往復の書き起こしと聞き直しの応答が
   メインの会話に積まれないので、コンテキストが育たない
