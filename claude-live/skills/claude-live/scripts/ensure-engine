@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# AivisSpeech が入っていなければ導入する。スキルの開始時に呼ぶ。
+#
+# 入っていれば何もせず即座に終わる（ファイルの存在確認だけなので速い）。
+# 未導入なら GitHub の最新リリースから dmg を落として /Applications に置く。
+# Homebrew の cask が無いため、dmg を直接扱う。
+#
+#   ./ensure-engine            未導入なら導入する
+#   ./ensure-engine --dry-run  何を落とすかだけ表示して終わる
+#
+# 終了コード: 0 = 使える状態、1 = 導入に失敗して使えない
+set -uo pipefail
+
+APP="/Applications/AivisSpeech.app"
+ENGINE="$APP/Contents/Resources/AivisSpeech-Engine/run"
+REPO="Aivis-Project/AivisSpeech"
+DRY_RUN=false
+[ "${1:-}" = "--dry-run" ] && DRY_RUN=true
+
+log() { echo "[ensure-engine] $*"; }
+fail() { log "$*"; exit 1; }
+
+# .app の存在ではなく実行ファイルまで見る。中身が欠けていれば導入済みとは言えない。
+if [ -x "$ENGINE" ] && [ "$DRY_RUN" = false ]; then
+  log "AivisSpeech は導入済み"
+  exit 0
+fi
+
+case "$(uname -m)" in
+  arm64) ARCH="arm64" ;;
+  x86_64) ARCH="x64" ;;
+  *) fail "対応していない CPU アーキテクチャ: $(uname -m)" ;;
+esac
+
+log "最新リリースを問い合わせる（${REPO} / ${ARCH}）"
+ASSET=$(python3 - "$REPO" "$ARCH" <<'PY'
+import json, re, sys, urllib.request
+repo, arch = sys.argv[1], sys.argv[2]
+try:
+    with urllib.request.urlopen(f"https://api.github.com/repos/{repo}/releases/latest", timeout=30) as r:
+        release = json.load(r)
+except Exception as exc:
+    print(f"ERROR {exc}")
+    sys.exit(0)
+# 資産名は AivisSpeech-macOS-<arch>-<version>.dmg の規則。
+pattern = re.compile(rf"^AivisSpeech-macOS-{re.escape(arch)}-.*\.dmg$")
+for asset in release.get("assets", []):
+    if pattern.match(asset["name"]):
+        print(f"{asset['browser_download_url']}\t{asset['name']}\t{asset['size']}")
+        sys.exit(0)
+print("ERROR 該当する dmg が見つからない")
+PY
+)
+
+case "$ASSET" in
+  ERROR*) fail "リリース情報を取得できない: ${ASSET#ERROR }" ;;
+  "") fail "リリース情報を取得できない" ;;
+esac
+
+URL=$(printf '%s' "$ASSET" | cut -f1)
+NAME=$(printf '%s' "$ASSET" | cut -f2)
+SIZE_MB=$(( $(printf '%s' "$ASSET" | cut -f3) / 1048576 ))
+
+log "対象: ${NAME}（約 ${SIZE_MB} MB）"
+if [ "$DRY_RUN" = true ]; then
+  log "URL: $URL"
+  [ -x "$ENGINE" ] && log "（導入済みなので実際には何もしない）"
+  exit 0
+fi
+
+WORK=$(mktemp -d) || fail "作業ディレクトリを作れない"
+MOUNT=""
+cleanup() {
+  [ -n "$MOUNT" ] && hdiutil detach "$MOUNT" -quiet 2>/dev/null
+  [ -d "$WORK" ] && /bin/rm -rf "$WORK"
+}
+trap cleanup EXIT
+
+log "ダウンロード中（${SIZE_MB} MB。数分かかることがある）"
+if ! curl -fsSL --retry 2 -o "$WORK/$NAME" "$URL"; then
+  fail "ダウンロードに失敗した"
+fi
+
+log "dmg をマウントする"
+# -plist で取る。-quiet を付けると出力が消えるし、表形式を空白で切ると
+# ボリューム名に空白がある場合（AivisSpeech の dmg が該当しうる）に壊れる。
+if ! hdiutil attach "$WORK/$NAME" -nobrowse -readonly -plist > "$WORK/attach.plist" 2>/dev/null; then
+  fail "dmg をマウントできない"
+fi
+MOUNT=$(python3 - "$WORK/attach.plist" <<'PY'
+import plistlib, sys
+with open(sys.argv[1], "rb") as handle:
+    info = plistlib.load(handle)
+for entity in info.get("system-entities", []):
+    if entity.get("mount-point"):
+        print(entity["mount-point"])
+        break
+PY
+)
+[ -n "$MOUNT" ] || fail "マウント先を特定できない"
+
+SOURCE="$MOUNT/AivisSpeech.app"
+[ -d "$SOURCE" ] || fail "dmg の中に AivisSpeech.app が見つからない"
+
+log "/Applications へコピーする"
+# 既存が壊れている場合に備え、置き換える前に退避する。
+if [ -e "$APP" ]; then
+  mv "$APP" "$WORK/AivisSpeech.app.old" || fail "既存の AivisSpeech.app を退避できない"
+fi
+if ! cp -R "$SOURCE" "$APP"; then
+  # 失敗したら退避したものを戻す
+  [ -d "$WORK/AivisSpeech.app.old" ] && mv "$WORK/AivisSpeech.app.old" "$APP"
+  fail "コピーに失敗した"
+fi
+
+# 成否は終了コードではなく実体で判定する。
+[ -x "$ENGINE" ] || fail "コピーしたが実行ファイルが見当たらない: $ENGINE"
+
+log "導入した: $APP"
+
+# ダウンロードした配布物は Gatekeeper の検疫属性が付くことがある。
+# ここで属性を外すと署名の検証を回避することになるため、外さずに知らせる。
+if xattr -p com.apple.quarantine "$APP" >/dev/null 2>&1; then
+  log "注意: 検疫属性が付いている。初回だけ Finder から AivisSpeech.app を開いて許可してください"
+fi
+
+log "初回の読み上げはモデル読み込みのため 60 秒ほどかかる"
+exit 0

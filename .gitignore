@@ -1,0 +1,6 @@
+# ソースはバージョン管理に含めない。配布するのは claude-live/ のプラグイン一式だけで、
+# その中の scripts/claude-live（ビルド済みバイナリ）が実体になる。
+claude-live-src/
+
+.DS_Store
+*.log

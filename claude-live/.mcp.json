@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "claude-live": {
+      "type": "stdio",
+      "command": "${CLAUDE_PLUGIN_ROOT}/skills/claude-live/scripts/claude-live",
+      "args": ["mcp"],
+      "timeout": 3900000
+    }
+  }
+}

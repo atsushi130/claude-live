@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# 音声で操作するために Claude Code を起動する。
+#
+# 速くしたいからといって effort やモデルを落とすと、応答の質が落ちて本末転倒になる。
+# 代わりに「毎ターン必ず思考する」設定だけを外し、軽い相槌では思考せず、
+# 判断が要る場面では深く考えられる状態にしておく。
+#
+# 使い方:
+#   ./start-claude-live                      音声操作を始める
+#   ./start-claude-live "認証の設計を相談したい"  話題を指定して始める
+#
+# モデルや effort を変えたいときは、そのまま引数で渡せる:
+#   ./start-claude-live --model sonnet
+set -euo pipefail
+
+# 読み上げエンジンが無ければ先に導入する。Claude を起動してから落とすより、
+# ここで済ませた方が進捗がターミナルに出て分かりやすい。
+# 導入済みならファイルの存在確認だけで即座に返る。
+"$(cd "$(dirname "$0")" && pwd)/ensure-engine" || \
+  echo "読み上げエンジンを用意できませんでした。macOS 内蔵音声で続行します。" >&2
+
+# スキルは自動起動しない設定（disable-model-invocation）なので、話題を渡す場合も
+# 必ず /claude-live を明示して呼ぶ。話題をそのまま投げるとスキルが読まれない。
+# 先頭の引数が - で始まらなければ話題、それ以外は claude のフラグとして扱う。
+prompt="/claude-live"
+if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
+  prompt="/claude-live $1"
+  shift
+fi
+
+exec claude \
+  --settings '{"alwaysThinkingEnabled": false}' \
+  "$@" \
+  "$prompt"

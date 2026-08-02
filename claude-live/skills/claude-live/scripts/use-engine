@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# 読み上げエンジンを切り替える。
+#
+#   ./use-engine aivis                  AivisSpeech の既定話者にする
+#   ./use-engine aivis 888753763        話者を指定する
+#   ./use-engine aivis 888753763 1.0    読み上げ速度も指定する（既定 1.15）
+#   ./use-engine auto                   使えるものを自動で選ぶ（AivisSpeech 優先）
+#
+# 話者 ID は ./claude-live voices --engine <名前> で確認できる。
+# 切り替えは MCP の登録を書き換えるだけなので、戻すのも同じ 1 コマンド。
+#
+# timeout は 65 分。ツール側の録音上限（60 分）と stdio の既定（30 分）の
+# どちらより長くしておかないと、沈黙して待っている間に打ち切られる。
+set -euo pipefail
+
+# 実行ファイルはこのスクリプトと同じ scripts/ に置かれている。
+# 絶対パスに解決しておくのは、MCP の登録にそのまま書き込むため。
+BIN="$(cd "$(dirname "$0")" && pwd)/claude-live"
+engine="${1:-}"
+speaker="${2:-}"
+speed="${3:-}"
+
+case "$engine" in
+  aivis | auto) ;;
+  *)
+    echo "使い方: ./use-engine <aivis|auto> [話者ID] [速度]" >&2
+    exit 1
+    ;;
+esac
+
+args='"mcp"'
+if [ "$engine" != "auto" ]; then
+  args="$args,\"--engine\",\"$engine\""
+fi
+if [ -n "$speaker" ]; then
+  args="$args,\"--speaker\",\"$speaker\""
+fi
+if [ -n "$speed" ]; then
+  args="$args,\"--speed\",\"$speed\""
+fi
+
+claude mcp remove claude-live -s user >/dev/null 2>&1 || true
+claude mcp add-json claude-live \
+  "{\"type\":\"stdio\",\"command\":\"$BIN\",\"args\":[$args],\"timeout\":3900000}" \
+  --scope user >/dev/null
+
+echo "読み上げエンジンを $engine に切り替えた。新しいセッションから有効になる。"
+claude mcp get claude-live | sed -n '1,7p'

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# 読み上げエンジンのプロセスを止める。SessionEnd フックから呼ぶ想定。
+#
+# エンジンは親から切り離されて残る（ppid 1）ので、セッションが終わっても
+# メモリを占有し続ける。使い終わったら解放したい場合にこれを使う。
+#
+# 引き換えに、次に使うときはモデルの読み込みを待つ（AivisSpeech は実測 60 秒超）。
+# 一日中使うなら止めない方が快適で、その場合はフックを外す。
+#
+# 手で実行するときは引数不要。フックから呼ばれるときは標準入力に JSON が来るが、
+# 使わないので読み捨てる。
+set -uo pipefail
+
+log() { echo "[stop-engines] $*" >&2; }
+
+# 現在のセッションの MCP サーバーが終わるのを待つ。フックがサーバーの終了より
+# 先に走ることがあり、その瞬間に数えると「使用中」と誤判定する。
+# 標準入力が閉じれば MCP サーバーは 1 秒ほどで終わるようにしてある。
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  pgrep -f "claude-live mcp" >/dev/null 2>&1 || break
+  sleep 0.5
+done
+
+# それでも残っているなら、別のセッションが使っている。触らない。
+if pgrep -f "claude-live mcp" >/dev/null 2>&1; then
+  log "他のセッションが使用中のため止めない"
+  exit 0
+fi
+
+stop_engine() {
+  local label="$1" app_pattern="$2" engine_pattern="$3"
+
+  # GUI アプリが動いているなら、エンジンはアプリが抱えているもの。
+  # 止めるとアプリが壊れるので触らない。
+  if pgrep -f "$app_pattern" >/dev/null 2>&1; then
+    log "$label: GUI が起動しているため止めない"
+    return
+  fi
+
+  local pids
+  pids=$(pgrep -f "$engine_pattern" || true)
+  if [ -z "$pids" ]; then
+    return
+  fi
+
+  # shellcheck disable=SC2086
+  kill $pids 2>/dev/null || true
+  log "$label: 停止した（PID $(echo $pids | tr '\n' ' ' | sed 's/ $//')）"
+}
+
+stop_engine "AivisSpeech" \
+  "AivisSpeech.app/Contents/MacOS" \
+  "/Applications/AivisSpeech.app/Contents/Resources/AivisSpeech-Engine/run"
+
+exit 0
