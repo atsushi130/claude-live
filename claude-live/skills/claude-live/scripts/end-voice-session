@@ -67,12 +67,17 @@ if [ -d "$MARKS" ] && [ "$session_id" != "-" ]; then
 fi
 log "自分の印を $removed 件外した。残り: [$(ls "$MARKS" 2>/dev/null | tr '\n' ' ')]"
 
-# 片付けの中身は利用者に任せる。置いていなければ何もしない。
+# 片付けの中身は外に任せる。置いていなければ何もしない。
 # 残った印を見て「他のセッションがまだ音声中か」を判断するのは on-end 側の仕事。
-if [ -x "$ON_END" ]; then
-  "$ON_END"
-  log "on-end を呼んだ（終了コード $?）"
-else
-  log "on-end が無いので何もしない"
-fi
+#
+# **利用者の on-end だけでなく on-end.d/* も呼ぶ。** MCP サーバー側と揃える。
+# 片方だけだと、フックから終わったときにプラグインの片付けが走らない。
+called=0
+for target in "$ON_END" "$ON_END.d"/*; do
+  [ -x "$target" ] || continue
+  "$target"
+  log "on-end を呼んだ: $(basename "$target")（終了コード $?）"
+  called=$((called + 1))
+done
+[ "$called" -eq 0 ] && log "呼ぶものが無いので何もしない"
 exit 0
