@@ -1,8 +1,22 @@
 #!/usr/bin/env bash
-# ペットを起動する。claude-live の on-start から呼ぶ想定。
+# ペットを起動する。claude-live の on-start（および on-start.d/）から呼ばれる。
 # すでに動いていれば何もしない。
+#
+# **自分の居場所は $0 のディレクトリでは求まらない。**
+# 繋ぎ込みで ~/.config/claude-live/on-start.d/claude-live-pet から symlink で
+# 呼ばれるため、$0 はリンク自身を指し、隣を見ても配布物のファイルは無い。
+# readlink -f は環境によって無いので、自前でたどる。
 set -uo pipefail
-source "$(cd "$(dirname "$0")" && pwd -P)/paths.sh"
+
+SELF="$0"
+while [ -L "$SELF" ]; do
+  target="$(readlink "$SELF")"
+  case "$target" in
+    /*) SELF="$target" ;;
+    *) SELF="$(dirname "$SELF")/$target" ;;
+  esac
+done
+source "$(cd "$(dirname "$SELF")" && pwd -P)/paths.sh"
 
 pgrep -f "claude-live-pet" >/dev/null 2>&1 && exit 0
 
