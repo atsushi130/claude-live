@@ -186,7 +186,23 @@ AivisHub のモデルを追加するときは、`ACML-NC`（非商用）ライ�
 ```bash
 claude-live/skills/claude-live/scripts/ensure-engine            # 未導入なら導入する
 claude-live/skills/claude-live/scripts/ensure-engine --dry-run  # 何を落とすかだけ表示する
+claude-live/skills/claude-live/scripts/ensure-voice             # 既定の話者を確かめる
+claude-live/skills/claude-live/scripts/ensure-voice --dry-run   # 何を入れるかだけ表示する
 ```
+
+### 既定の話者も入れる
+
+AivisSpeech に同梱される話者だけでは環境によって声が変わるので、**既定の話者
+「にせ」を入れる**（`ACML 1.0`。非商用限定ではないことをマニフェストで確認済み）。
+
+`ensure-voice` は導入済みなら一覧を見るだけで返る。未導入なら配布元の URL を
+エンジンの導入 API に渡す。**250 MB のモデルはエンジンに落とさせる**ので、
+こちらで抱えたり配布物に含めたりしない。
+
+話者の指定が `config.json` に無ければ、このとき既定として書く。名前から
+スタイル ID を引くので、ID を埋め込んではいない。**すでに選んでいれば触らない。**
+
+別のモデルを入れるなら UUID を渡す。`ensure-voice <UUID>`。
 
 CPU アーキテクチャは `uname -m` から判定し、`AivisSpeech-macOS-{arm64|x64}-*.dmg`
 を選ぶ。成否は終了コードではなく**実行ファイルの実在**で判定する。

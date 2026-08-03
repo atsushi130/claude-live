@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# 既定の話者が入っていなければ導入する。エンジンを用意したあとに呼ぶ。
+#
+#   ./ensure-voice                 既定の話者（にせ）を確かめて、無ければ入れる
+#   ./ensure-voice <UUID>          任意のモデルを入れる
+#   ./ensure-voice --dry-run       何をするかだけ表示して終わる
+#
+# AivisSpeech に同梱されている話者だけでは、環境によって声が変わる。
+# 既定を 1 つ決めておくと、入れた人が同じ声で聞ける。
+#
+# **モデルはエンジンに落とさせる。** 250 MB あるので手元に置いて渡すのは無駄が多い。
+# エンジンの導入 API は URL を受けられるので、配布元の URL だけを渡す。
+#
+# 導入済みなら一覧を見るだけで即座に返る。エンジンが動いていなければ何もしない
+# （次の読み上げでエンジンが立ち上がったあと、改めて呼べばよい）。
+#
+# 終了コードは常に 0。話者が入らなくても、同梱の話者で読み上げは続けられる。
+set -uo pipefail
+
+# にせ（ACML 1.0。非商用限定ではない）
+DEFAULT_UUID="6d11c6c2-f4a4-4435-887e-23dd60f8b8dd"
+PORT="${CLAUDE_LIVE_AIVIS_PORT:-10101}"
+
+uuid="$DEFAULT_UUID"
+dry_run=false
+case "${1:-}" in
+  --dry-run) dry_run=true ;;
+  "") ;;
+  -*) echo "使い方: ./ensure-voice [<UUID> | --dry-run]" >&2; exit 0 ;;
+  *) uuid="$1" ;;
+esac
+
+log() { echo "[ensure-voice] $*"; }
+
+# エンジンが応答しなければ起動しておく。導入 API はエンジン越しにしか叩けないし、
+# **話者が揃う前に読み上げが始まると、指定した話者が無くて内蔵音声に落ちる。**
+# 起動待ちはどのみち最初の読み上げで発生するので、ここで先に済ませる。
+if ! python3 -c "
+import sys, urllib.request
+try:
+    urllib.request.urlopen('http://127.0.0.1:$PORT/version', timeout=2)
+except Exception:
+    sys.exit(1)
+" 2>/dev/null; then
+  log "エンジンを起動する（初回はモデル読み込みで 60 秒以上かかる）"
+  "$(cd "$(dirname "$0")" && pwd)/claude-live" voices >/dev/null 2>&1
+fi
+
+python3 - "$PORT" "$uuid" "$dry_run" <<'PY'
+import json, sys, urllib.error, urllib.parse, urllib.request
+
+port, uuid, dry_run = sys.argv[1], sys.argv[2], sys.argv[3] == "true"
+base = f"http://127.0.0.1:{port}"
+hub = f"https://api.aivis-project.com/v1/aivm-models/{uuid}"
+download = f"{hub}/download?model_type=AIVMX"
+
+
+def note(message):
+    print(f"[ensure-voice] {message}")
+
+
+# エンジンが動いていなければ何もしない。起動は読み上げ側の仕事で、
+# ここで待つと最初の一言までの間がさらに延びる。
+try:
+    with urllib.request.urlopen(f"{base}/aivm_models", timeout=3) as response:
+        installed = json.load(response)
+except Exception:
+    note("エンジンが動いていないので何もしない")
+    raise SystemExit
+
+def adopt(model_name):
+    """話者の指定が無ければ、このモデルの先頭スタイルを既定にする。
+
+    指定が無いと「エンジンが持つ先頭のスタイル」が使われ、同梱の話者や
+    導入の順で声が変わる。入れた人が同じ声で聞けるよう、初回だけ書く。
+    **すでに指定があれば触らない。** 選び直したものを上書きしないため。
+    """
+    import os
+
+    path = os.path.expanduser("~/.config/claude-live/config.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            config = json.load(handle)
+        if not isinstance(config, dict):
+            config = {}
+    except Exception:
+        config = {}
+    if config.get("speaker"):
+        return
+
+    try:
+        with urllib.request.urlopen(f"{base}/speakers", timeout=5) as response:
+            speakers = json.load(response)
+    except Exception:
+        return
+    for speaker in speakers:
+        if speaker.get("name") == model_name and speaker.get("styles"):
+            style = speaker["styles"][0]
+            config["speaker"] = style["id"]
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(config, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+            note(f"既定の話者にした: {model_name}・{style.get('name')}（ID {style['id']}）")
+            return
+
+
+if uuid in installed:
+    name = (installed[uuid].get("manifest") or {}).get("name") or uuid
+    note(f"導入済み: {name}")
+    adopt(name)
+    raise SystemExit
+
+# 名前とライセンスを出してから入れる。何を入れたのかが記録に残るように。
+name, license_type = uuid, "不明"
+try:
+    request = urllib.request.Request(hub, headers={"User-Agent": "claude-live"})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        info = json.load(response)
+    name = info.get("name") or uuid
+    files = info.get("model_files") or [{}]
+    license_type = files[0].get("license_type") or "不明"
+except Exception as error:
+    note(f"配布元に問い合わせできない（{type(error).__name__}）。導入は試みる")
+
+note(f"導入する: {name}（ライセンス {license_type}）")
+if dry_run:
+    note(f"URL: {download}")
+    raise SystemExit
+
+# 250 MB をこちらで抱えず、エンジンに落とさせる。
+body, boundary = [], "----claude-live-ensure-voice"
+body.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"url\"\r\n\r\n{download}\r\n")
+body.append(f"--{boundary}--\r\n")
+payload = "".join(body).encode("utf-8")
+request = urllib.request.Request(
+    f"{base}/aivm_models/install",
+    data=payload,
+    headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    method="POST",
+)
+try:
+    # ダウンロードと展開でそれなりに待つ。
+    with urllib.request.urlopen(request, timeout=900) as response:
+        note(f"導入した: {name}（HTTP {response.status}）")
+    adopt(name)
+except urllib.error.HTTPError as error:
+    note(f"導入に失敗した: HTTP {error.code} {error.read()[:200]!r}")
+except Exception as error:
+    note(f"導入に失敗した: {type(error).__name__} {error}")
+PY
+
+exit 0
