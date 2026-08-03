@@ -2,32 +2,72 @@
 # 自分のペットを登録する。
 #
 #   ./add-pet                                   登録済みと同梱のペットを一覧する
-#   ./add-pet <名前> <ディレクトリ>               コマ一式（manifest.json 込み）を登録する
-#   ./add-pet <名前> --sheet <画像> <動き>=<行> …  スプライトシートから切り出して登録する
+#   ./add-pet <名前> <ディレクトリ>               そのディレクトリを登録する
+#   ./add-pet <名前> --sheet <画像> <動き>=<行> …  シートから切り出して登録する
+#   ./add-pet --forget <名前>                    登録を外す（コマ画像は消さない）
 #
 # 例:
 #   ./add-pet 9s ~/somewhere/9s-frames
 #   ./add-pet clawd --sheet ~/Downloads/clawd.webp stand=1 run=6 talk=4 walk=5 think=9
 #
-# 登録先は書き込み用のディレクトリ（paths.sh を参照）。配布物と分けているのは、
-# 更新で配布物が丸ごと入れ替わっても、登録したペットが巻き添えで消えないようにするため。
-# 同じ名前があれば登録した側が優先されるので、同梱のペットを差し替えることもできる。
+# **コマ画像は複製せず、置いた場所をそのまま覚える。** 素材は利用者のもので、
+# どこで管理するかも利用者が決める。複製すると、元を直しても反映されないうえ、
+# 同じものが 2 か所にできる。登録簿（pets.json）に名前とパスだけを書く。
+#
+# 切り出し（--sheet）だけは出力先が要るので、既定で登録簿と同じ場所に作る。
+# `--out <ディレクトリ>` で好きな場所を指定できる。
 #
 # 登録しただけでは表示は変わらない。切り替えは ./use-pet <名前>。
 set -uo pipefail
 source "$(cd "$(dirname "$0")" && pwd -P)/paths.sh"
 
-INSTALLED="$PET_DATA/pets"
+REGISTRY="$PET_DATA/pets.json"
 BUILTIN="$PET_RESOURCES/pets"
 
+registry() {
+  python3 - "$REGISTRY" "$@" <<'PY'
+import json, os, sys
+path = sys.argv[1]
+action = sys.argv[2] if len(sys.argv) > 2 else "list"
+try:
+    with open(path, encoding="utf-8") as handle:
+        entries = json.load(handle)
+    if not isinstance(entries, dict):
+        entries = {}
+except Exception:
+    entries = {}
+
+if action == "list":
+    for name in sorted(entries):
+        location = entries[name]
+        ok = os.path.isfile(os.path.join(location, "manifest.json"))
+        print(f"{name}\t{location}\t{'ok' if ok else 'missing'}")
+elif action == "get":
+    print(entries.get(sys.argv[3], ""))
+elif action in ("set", "forget"):
+    if action == "set":
+        entries[sys.argv[3]] = sys.argv[4]
+    else:
+        entries.pop(sys.argv[3], None)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(entries, handle, ensure_ascii=False, indent=2, sort_keys=True)
+        handle.write("\n")
+PY
+}
+
 list() {
-  echo "登録したペット（${INSTALLED}）"
+  echo "登録したペット（${REGISTRY}）"
   local found=false
-  for dir in "$INSTALLED"/*; do
-    [ -f "$dir/manifest.json" ] || continue
-    echo "  $(basename "$dir")"
+  while IFS=$'\t' read -r name location state; do
+    [ -n "$name" ] || continue
+    if [ "$state" = "ok" ]; then
+      echo "  $name  $location"
+    else
+      echo "  $name  $location  ← 見つからない（移動か削除。--forget で外せる）"
+    fi
     found=true
-  done
+  done < <(registry list)
   [ "$found" = false ] && echo "  （まだ無い）"
 
   echo "同梱のペット（${BUILTIN}）"
@@ -42,6 +82,13 @@ if [ $# -eq 0 ]; then
   exit 0
 fi
 
+if [ "$1" = "--forget" ]; then
+  [ $# -ge 2 ] || { echo "使い方: ./add-pet --forget <名前>" >&2; exit 1; }
+  registry forget "$2"
+  echo "登録を外した: $2（コマ画像は消していない）"
+  exit 0
+fi
+
 name="$1"
 shift
 case "$name" in
@@ -52,25 +99,32 @@ if [ $# -eq 0 ]; then
   exit 1
 fi
 
-target="$INSTALLED/$name"
-mkdir -p "$target" || { echo "作れない: $target" >&2; exit 1; }
-
 if [ "$1" = "--sheet" ]; then
   shift
+  out="$PET_DATA/pets/$name"
+  if [ "${1:-}" = "--out" ]; then
+    shift
+    out="${1:-}"; shift
+    [ -n "$out" ] || { echo "--out にディレクトリを指定してください" >&2; exit 1; }
+  fi
   [ $# -ge 2 ] || { echo "--sheet <画像> <動き>=<行> … の形で指定してください" >&2; exit 1; }
   sheet="$1"; shift
-  "$PET_SCRIPTS/slice-sheet" "$sheet" "$target" "$@" || exit 1
+  mkdir -p "$out" || { echo "作れない: $out" >&2; exit 1; }
+  "$PET_SCRIPTS/slice-sheet" "$sheet" "$out" "$@" || exit 1
+  target="$out"
 else
-  source_dir="${1%/}"
-  [ -f "$source_dir/manifest.json" ] || {
-    echo "manifest.json が無いので登録できない: $source_dir" >&2
+  target="${1%/}"
+  [ -f "$target/manifest.json" ] || {
+    echo "manifest.json が無いので登録できない: $target" >&2
     echo "スプライトシートから作るなら --sheet を使ってください。" >&2
     exit 1
   }
-  cp "$source_dir"/*.png "$source_dir/manifest.json" "$target"/ || exit 1
-  # コマの選び方は素材ごとに違うので、あれば一緒に持っていく。
-  [ -f "$source_dir/pet.json" ] && cp "$source_dir/pet.json" "$target"/
 fi
 
+# 相対パスのまま覚えると、別のディレクトリから呼んだときに解決できない。
+target="$(cd "$target" && pwd -P)"
+registry set "$name" "$target"
+
 echo "登録した: $name → $target"
+echo "**コマ画像はそこに置いたまま。** 移動したら登録し直してください。"
 echo "表示を切り替えるなら: ./use-pet $name"

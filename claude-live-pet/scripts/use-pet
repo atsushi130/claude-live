@@ -10,8 +10,25 @@ set -uo pipefail
 source "$(cd "$(dirname "$0")" && pwd -P)/paths.sh"
 
 CONFIG="$PET_DATA/config.json"
-INSTALLED="$PET_DATA/pets"
+REGISTRY="$PET_DATA/pets.json"
 BUILTIN="$PET_RESOURCES/pets"
+
+# 登録簿に載っていれば、そのパスのコマを使う。無ければ同梱のものを見る。
+located() {
+  python3 - "$REGISTRY" "$1" "$BUILTIN" <<'PY'
+import json, os, sys
+registry, name, builtin = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(registry, encoding="utf-8") as handle:
+        entries = json.load(handle)
+except Exception:
+    entries = {}
+for candidate in (entries.get(name), os.path.join(builtin, name)):
+    if candidate and os.path.isfile(os.path.join(candidate, "manifest.json")):
+        print(candidate)
+        break
+PY
+}
 
 current() {
   python3 - "$CONFIG" <<'PY'
@@ -31,8 +48,8 @@ if [ $# -eq 0 ]; then
 fi
 
 name="$1"
-if [ ! -f "$INSTALLED/$name/manifest.json" ] && [ ! -f "$BUILTIN/$name/manifest.json" ]; then
-  echo "そんなペットは無い: $name" >&2
+if [ -z "$(located "$name")" ]; then
+  echo "そんなペットは無い（登録が外れているか、コマ画像が移動した）: $name" >&2
   "$PET_SCRIPTS/add-pet" >&2
   exit 1
 fi

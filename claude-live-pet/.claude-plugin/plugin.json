@@ -1,7 +1,7 @@
 {
   "name": "claude-live-pet",
   "description": "claude-live の状態に合わせて動くドット絵を画面の最前面に重ねる。話しているとき・考えているときで動きが変わる。自分のペットを登録して差し替えられる。",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "author": {
     "name": "atsushi.miyake"
   }
