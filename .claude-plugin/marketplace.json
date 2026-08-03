@@ -10,7 +10,7 @@
       "name": "claude-live",
       "source": "./claude-live",
       "description": "日本語の音声で Claude Code を操作する。議論・調査の依頼・実装の指示・スキルの呼び出しを声で行う。音声認識は macOS のオンデバイス機能、読み上げは AivisSpeech を使い、音声データを外部に送らない。",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "author": {
         "name": "atsushi130"
       }
@@ -19,7 +19,7 @@
       "name": "claude-live-pet",
       "source": "./claude-live-pet",
       "description": "claude-live の状態に合わせて動くドット絵を画面の最前面に重ねる。話しているとき・考えているときで動きが変わる。自分のペットを登録して差し替えられる。",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "atsushi130"
       }

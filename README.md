@@ -35,7 +35,7 @@ claude-live-pet/                     画面にドット絵を出すプラグイ�
 │   ├── start-pet / stop-pet         claude-live の on-start / on-end から呼ぶ
 │   ├── add-pet / use-pet            スキルの中身
 │   ├── slice-sheet                  スプライトシートを行ごとに切り出す
-│   ├── link-current                 版に依らない入口を作る（SessionStart フック用）
+│   ├── connect                      claude-live に自分を繋ぐ（SessionStart フック用）
 │   ├── paths.sh                     配布物と書き込み先の決め方
 │   └── pets/clawd/                  同梱のペット（既定）
 ├── .claude-plugin/plugin.json       プラグインの定義
@@ -253,15 +253,20 @@ claude-live/skills/claude-live/scripts/stop-engines
 表示や記録など、音声の開始終了に合わせて何かを動かしたいとき用の口が 2 つある。
 どちらも**置いていなければ何も起きない**ので、使わない環境では副作用がない。
 
-| 置き場所 | 呼ばれるとき |
+| 置き場所 | 誰のもの |
 | --- | --- |
-| `~/.config/claude-live/on-start` | 音声のやり取りが始まったとき |
-| `~/.config/claude-live/on-end` | 音声のやり取りが終わったとき |
+| `~/.config/claude-live/on-start`（`on-end`） | 利用者が自分で書くもの |
+| `~/.config/claude-live/on-start.d/*`（`on-end.d/*`） | 他のプラグインが自分で置くもの |
+
+**`.d` を分けているのは、繋ぎ込みのために利用者のファイルを書き換えたくないため。**
+1 つのファイルしか無いと、後から入れたものが既にある内容を壊しかねないし、
+消すときにどこまでが自分の分か分からなくなる。ディレクトリなら各自が 1 本置くだけで共存できる。
+呼ぶ順はファイル名順で、消し忘れた壊れた symlink は飛ばされる。
 
 加えて `~/.local/state/claude-live/` を作っておくと、いま何をしているかが
 `state`（`thinking` / `speaking` / `idle`）に書かれる。
 
-この 2 つと `state` を使う実装が **claude-live-pet**（下記）。
+この口と `state` を使う実装が **claude-live-pet**（下記）。
 
 ### 終わりをどう検知するか
 
@@ -305,18 +310,23 @@ MCP サーバーは標準入力が閉じれば自分で印を外すが、**強�
 /plugin install claude-live-pet@claude-live
 ```
 
-起動と停止は claude-live の `on-start` / `on-end` から呼ぶ。次の 1 行ずつを足す。
+**繋ぎ込みは要らない。** 入れて次のセッションを始めると、`SessionStart` フックの
+`connect` が自分で繋ぐ。
 
-```bash
-# ~/.config/claude-live/on-start
-"$HOME/.claude/plugins/data/claude-live-pet-claude-live/current/scripts/start-pet"
-
-# ~/.config/claude-live/on-end
-"$HOME/.claude/plugins/data/claude-live-pet-claude-live/current/scripts/stop-pet"
+```
+~/.claude/plugins/data/claude-live-pet-<マーケットプレイス>/current  → いま入っている版
+~/.config/claude-live/on-start.d/claude-live-pet                     → current/scripts/start-pet
+~/.config/claude-live/on-end.d/claude-live-pet                       → current/scripts/stop-pet
 ```
 
-`current` は**版に依らない入口**で、`SessionStart` のたびに今入っている版へ張り直される。
-配布物はバージョンごとに別ディレクトリへ入れ替わるため、直接パスを書くと更新で切れる。
+`current` を挟むのは、配布物がバージョンごとに別ディレクトリへ入れ替わるため。
+これがないと更新のたびに繋ぎ直しが要る。symlink は current 越しなので張り直しも不要。
+
+止めてよいか（他のセッションがまだ音声中でないか）の判断は claude-live 側の `on-end` が
+持っている。そこに乗るので、ペット側で二重に実装していない。
+
+外すときはプラグインを消してから、残った symlink を消す。壊れた symlink は
+実行可能に見えないため、消し忘れても何も起きない。
 
 ### ペットを選ぶ・増やす
 

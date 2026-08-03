@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/link-current",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/connect",
             "timeout": 10
           }
         ]

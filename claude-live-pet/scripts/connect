@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# claude-live に自分を繋ぎ込む。SessionStart フックから呼ぶ。
+#
+# やることは 2 つ。どちらも何度実行しても同じ状態になる。
+#
+# 1. 版に依らない入口を書き込み先に作る
+#      ~/.claude/plugins/data/claude-live-pet-<マーケットプレイス>/current
+#        → いま入っている版のディレクトリ
+#    配布物はバージョンごとに別ディレクトリへ入れ替わるため、これを挟まないと
+#    呼ぶ側が覚えたパスが更新のたびに切れる。
+#
+# 2. claude-live の音声の開始・終了に自分を繋ぐ
+#      ~/.config/claude-live/on-start.d/claude-live-pet → current/scripts/start-pet
+#      ~/.config/claude-live/on-end.d/claude-live-pet   → current/scripts/stop-pet
+#    **利用者の on-start / on-end は書き換えない。** 1 つのファイルに書き足す形だと、
+#    既にある内容を壊しかねないし、消すときにどこまでが自分の分か分からなくなる。
+#    停止してよいか（他のセッションがまだ音声中でないか）の判断は claude-live 側の
+#    on-end が持っているので、そこに乗る方が二重に実装せずに済む。
+#
+# current 越しに張るので、プラグインを更新しても張り直しは要らない。
+set -uo pipefail
+
+[ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -n "${CLAUDE_PLUGIN_DATA:-}" ] || exit 0
+
+mkdir -p "$CLAUDE_PLUGIN_DATA"
+ln -sfn "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_DATA/current"
+
+ENTRY="$CLAUDE_PLUGIN_DATA/current/scripts"
+CONFIG="$HOME/.config/claude-live"
+
+mkdir -p "$CONFIG/on-start.d" "$CONFIG/on-end.d"
+ln -sfn "$ENTRY/start-pet" "$CONFIG/on-start.d/claude-live-pet"
+ln -sfn "$ENTRY/stop-pet" "$CONFIG/on-end.d/claude-live-pet"
+
+exit 0
