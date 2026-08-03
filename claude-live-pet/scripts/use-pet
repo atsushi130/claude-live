@@ -11,7 +11,7 @@ source "$(cd "$(dirname "$0")" && pwd -P)/paths.sh"
 
 CONFIG="$PET_DATA/config.json"
 INSTALLED="$PET_DATA/pets"
-BUILTIN="$PET_SCRIPTS/pets"
+BUILTIN="$PET_RESOURCES/pets"
 
 current() {
   python3 - "$CONFIG" <<'PY'

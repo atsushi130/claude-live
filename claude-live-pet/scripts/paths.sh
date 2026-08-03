@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # 配布物の置き場所と、書き込み先の決め方。他のスクリプトから読み込む。
 #
-#   PET_ROOT  配布物（バイナリ・同梱ペット）。バージョンごとに入れ替わる
-#   PET_DATA  書き込むもの（選んだペット・表示位置・登録したペット）。更新をまたいで残る
+#   PET_ROOT       配布物の root。バージョンごとに入れ替わる
+#   PET_SCRIPTS    実行するもの（バイナリ・スクリプト）
+#   PET_RESOURCES  同梱の素材（ペットのコマ画像）
+#   PET_DATA       書き込むもの（選んだペット・表示位置・登録したペット）。更新をまたいで残る
 #
 # **環境変数に頼らない。** CLAUDE_PLUGIN_DATA はプラグインのフックや MCP サーバーには
 # 渡るが、ここは claude-live 側の on-start から呼ばれることがあり、その場合は
@@ -19,6 +21,7 @@
 
 PET_SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PET_ROOT="$(dirname "$PET_SCRIPTS")"
+PET_RESOURCES="$PET_ROOT/resources"
 
 case "$PET_ROOT" in
   */.claude/plugins/cache/*)

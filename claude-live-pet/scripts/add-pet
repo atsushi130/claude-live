@@ -18,7 +18,7 @@ set -uo pipefail
 source "$(cd "$(dirname "$0")" && pwd -P)/paths.sh"
 
 INSTALLED="$PET_DATA/pets"
-BUILTIN="$PET_SCRIPTS/pets"
+BUILTIN="$PET_RESOURCES/pets"
 
 list() {
   echo "登録したペット（${INSTALLED}）"

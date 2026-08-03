@@ -36,8 +36,8 @@ claude-live-pet/                     画面にドット絵を出すプラグイ�
 │   ├── add-pet / use-pet            スキルの中身
 │   ├── slice-sheet                  スプライトシートを行ごとに切り出す
 │   ├── connect                      claude-live に自分を繋ぐ（SessionStart フック用）
-│   ├── paths.sh                     配布物と書き込み先の決め方
-│   └── pets/clawd/                  同梱のペット（既定）
+│   └── paths.sh                     配布物と書き込み先の決め方
+├── resources/pets/clawd/            同梱のペット（既定）。コマ画像・manifest.json・pet.json
 ├── .claude-plugin/plugin.json       プラグインの定義
 └── hooks/hooks.json                 SessionStart のフック
 ```
@@ -381,8 +381,11 @@ MCP サーバーは標準入力が閉じれば自分で印を外すが、**強�
 
 | | 場所 | 中身 |
 | --- | --- | --- |
-| 配布物 | `~/.claude/plugins/cache/<マーケットプレイス>/claude-live-pet/<版>/` | バイナリ・同梱ペット |
+| 配布物 | `<版>/scripts/` | バイナリとスクリプト |
+| 配布物 | `<版>/resources/pets/` | 同梱のペット |
 | 書き込み | `~/.claude/plugins/data/claude-live-pet-<マーケットプレイス>/` | 選んだペット・表示位置・登録したペット |
+
+`<版>` は `~/.claude/plugins/cache/<マーケットプレイス>/claude-live-pet/<版>/`。
 
 **分けているのは、配布物がバージョンごとに別ディレクトリへ作り直されるため。**
 古い版には `.orphaned_at` が付いていずれ消えるので、そこへ書くと更新のたびに失われる。
