@@ -2,17 +2,18 @@
 name: add-pet
 description: >
   claude-live-pet に自分のペット（ドット絵）を登録する。コマ一式のディレクトリからでも、
-  スプライトシート 1 枚からでも登録できる。
-  「ペットを追加したい」「このドット絵をペットにして」「スプライトシートから切り出して」
-  と言われたときに使う。
+  スプライトシート 1 枚からでも登録できる。登録を外すこともできる。
+  自動では起動しないので `/claude-live-pet:add-pet` で明示的に呼ぶ。
 argument-hint: [名前と、コマの在り処]
 user-invocable: true
+disable-model-invocation: true
 ---
 
 # ペットを登録する
 
-`${CLAUDE_PLUGIN_ROOT}/scripts/add-pet` を使う。登録先は書き込み用のディレクトリで、
-プラグインを更新しても消えない。
+`${CLAUDE_PLUGIN_ROOT}/scripts/add-pet` を使う。**コマ画像は複製せず、置いた場所を
+そのまま覚える**（登録簿に名前とパスだけを書く）。素材は利用者のもので、
+どこで管理するかも利用者が決める。
 
 ## 何を持っているかを先に見る
 
@@ -20,15 +21,22 @@ user-invocable: true
 "${CLAUDE_PLUGIN_ROOT}"/scripts/add-pet
 ```
 
-登録済みと同梱のペットが並ぶ。**同じ名前で登録すると同梱のものより優先される**ので、
-差し替えたいのか別名で増やしたいのかを、名前が既にある場合は確かめる。
+登録済み（パス付き）と同梱のペットが並ぶ。**同じ名前で登録すると同梱のものより
+優先される**ので、名前が既にある場合は差し替えたいのか別名で増やしたいのかを確かめる。
+`← 見つからない` が付いていれば、そのペットは移動か削除されている。
 
 ## コマ一式から登録する
 
-`manifest.json` があるディレクトリをそのまま渡す。
+`manifest.json` があるディレクトリをそのまま渡す。**そこに置いたままで動く。**
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT}"/scripts/add-pet 9s ~/somewhere/9s-frames
+```
+
+移動したら登録し直す。登録を外すなら次（コマ画像は消さない）。
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/add-pet --forget 9s
 ```
 
 ## スプライトシートから登録する
@@ -48,6 +56,15 @@ user-invocable: true
 ```bash
 "${CLAUDE_PLUGIN_ROOT}"/scripts/add-pet clawd --sheet ~/Downloads/clawd.webp \
   stand=1 run=6 talk=4 walk=5 think=9
+```
+
+切り出したコマの置き場所は、既定ではプラグインの持ち物の下になる。**そこは
+アンインストールで消える**ので、残したい場合は `--out` で利用者の場所を指定する。
+シートから作るときは、残したいかどうかを確かめてから決める。
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/add-pet clawd --sheet ~/Downloads/clawd.webp \
+  --out ~/pets/clawd stand=1 run=6 talk=4 walk=5 think=9
 ```
 
 ## 動きの名前

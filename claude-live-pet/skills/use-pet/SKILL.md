@@ -2,10 +2,11 @@
 name: use-pet
 description: >
   claude-live-pet で表示するペットを切り替える。見た目（大きさ・左右反転・動きの速さ）も変える。
-  「ペットを変えて」「9s に戻して」「もう少し小さく」「走りが速すぎる」
-  と言われたときに使う。
+  登録済みと同梱のペットの一覧も出す。
+  自動では起動しないので `/claude-live-pet:use-pet` で明示的に呼ぶ。
 argument-hint: [ペットの名前]
 user-invocable: true
+disable-model-invocation: true
 ---
 
 # ペットを切り替える
@@ -18,14 +19,16 @@ user-invocable: true
 **起動し直さなくてよい。** 設定は 0.2 秒ごとに読み直され、ペットが変わればコマを
 読み込み直して窓も作り直す。位置は左下を固定するのでずれない。
 
-無い名前を渡すと、選べるものを並べて終わる。登録は `add-pet` スキル。
+無い名前を渡すと、選べるものを並べて終わる。**登録が外れているか、登録したときの
+場所からコマ画像が移動した場合も同じ**なので、そのときは `/claude-live-pet:add-pet`
+で登録し直す。
 
 ## 見た目を変える
 
-書き込み用の `config.json` を書き換える。置き場所は次で分かる。
+`config.json` を書き換える。置き場所は次で分かる（登録簿と同じディレクトリ）。
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}"/scripts/use-pet | head -1
+"${CLAUDE_PLUGIN_ROOT}"/scripts/add-pet | head -1
 ```
 
 `config.json` に書ける項目。
