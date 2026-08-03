@@ -1,19 +1,46 @@
 ---
-name: use-pet
+name: select-pet
 description: >
-  claude-live-pet で表示するペットを切り替える。見た目（大きさ・左右反転・動きの速さ）も変える。
-  登録済みと同梱のペットの一覧も出す。
-  自動では起動しないので `/claude-live-pet:use-pet` で明示的に呼ぶ。
-argument-hint: [ペットの名前]
+  claude-live-pet で表示するペットを選ぶ。登録済みと同梱のペットから選択させる。
+  見た目（大きさ・左右反転・動きの速さ）もここで変える。
+  自動では起動しないので `/claude-live-pet:select-pet` で明示的に呼ぶ。
+argument-hint: [ペットの名前（省略すると選択肢を出す）]
 user-invocable: true
 disable-model-invocation: true
 ---
 
-# ペットを切り替える
+# ペットを選ぶ
+
+## 名前が渡されていれば、そのまま切り替える
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}"/scripts/use-pet            # いま選んでいるものと、選べるもの
-"${CLAUDE_PLUGIN_ROOT}"/scripts/use-pet 9s         # 切り替える
+"${CLAUDE_PLUGIN_ROOT}"/scripts/select-pet 9s
+```
+
+## 渡されていなければ、選ばせる
+
+**勝手に決めない。** どれを出すかは好みの問題で、こちらに判断材料がない。
+まず候補を集める。
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/select-pet
+```
+
+出力には「いま選んでいるペット」「登録したペット（パス付き）」「同梱のペット」が並ぶ。
+これを **AskUserQuestion で選択肢として提示する**。
+
+- いま選んでいるものには「（現在）」を付ける
+- 同梱のものには「同梱」、登録したものにはパスを添えて区別できるようにする
+- `← 見つからない` が付いた登録は**選択肢に出さない**。切り替えても表示できないため。
+  代わりに登録が切れていることを伝え、`/claude-live-pet:add-pet` を案内する
+- 候補が 4 件を超えるときは、選択肢に入り切らない分を本文に並べて名前で答えてもらう
+- 候補が同梱の 1 件しか無いときは選ばせても意味がない。
+  `/claude-live-pet:add-pet` で増やせることを伝えて終わる
+
+選ばれたら切り替える。
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}"/scripts/select-pet <選ばれた名前>
 ```
 
 **起動し直さなくてよい。** 設定は 0.2 秒ごとに読み直され、ペットが変わればコマを

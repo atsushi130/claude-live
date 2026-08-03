@@ -81,10 +81,10 @@ disable-model-invocation: true
 
 ## 登録しただけでは変わらない
 
-表示の切り替えは別。続けて切り替えるなら `use-pet` スキル、または直接:
+表示の切り替えは別。続けて切り替えるなら `/claude-live-pet:select-pet`、または直接:
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}"/scripts/use-pet <名前>
+"${CLAUDE_PLUGIN_ROOT}"/scripts/select-pet <名前>
 ```
 
 ## 確かめる

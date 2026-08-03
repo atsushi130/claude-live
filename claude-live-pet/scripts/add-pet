@@ -20,7 +20,7 @@
 # 切り出し（--sheet）だけは出力先が要るので、既定で登録簿と同じ場所に作る。
 # `--out <ディレクトリ>` で好きな場所を指定できる。
 #
-# 登録しただけでは表示は変わらない。切り替えは ./use-pet <名前>。
+# 登録しただけでは表示は変わらない。切り替えは ./select-pet <名前>。
 set -uo pipefail
 source "$(cd "$(dirname "$0")" && pwd -P)/paths.sh"
 
@@ -130,4 +130,4 @@ registry set "$name" "$target"
 
 echo "登録した: $name → $target"
 echo "**コマ画像はそこに置いたまま。** 移動したら登録し直してください。"
-echo "表示を切り替えるなら: ./use-pet $name"
+echo "表示を切り替えるなら: ./select-pet $name"

@@ -29,11 +29,11 @@ claude-live/                         プラグイン本体
 
 claude-live-pet/                     画面にドット絵を出すプラグイン（任意）
 ├── skills/add-pet/SKILL.md          自分のペットを登録する
-├── skills/use-pet/SKILL.md          表示するペットを選ぶ・見た目を変える
+├── skills/select-pet/SKILL.md       表示するペットを選ぶ・見た目を変える
 ├── scripts/
 │   ├── claude-live-pet              オーバーレイ本体（単体で動く実行ファイル）
 │   ├── start-pet / stop-pet         claude-live の on-start / on-end から呼ぶ
-│   ├── add-pet / use-pet            スキルの中身
+│   ├── add-pet / select-pet         スキルの中身
 │   ├── slice-sheet                  スプライトシートを行ごとに切り出す
 │   ├── connect                      claude-live に自分を繋ぐ（SessionStart フック用）
 │   └── paths.sh                     配布物と書き込み先の決め方
@@ -334,7 +334,7 @@ MCP サーバーは標準入力が閉じれば自分で印を外すが、**強�
 
 ```
 /claude-live-pet:add-pet     ペットを登録する・登録を外す・一覧を見る
-/claude-live-pet:use-pet     表示を切り替える・見た目を変える
+/claude-live-pet:select-pet     表示を切り替える・見た目を変える
 ```
 
 どちらも `disable-model-invocation: true` で、**明示的に呼んだときだけ動く**。
@@ -343,8 +343,8 @@ MCP サーバーは標準入力が閉じれば自分で印を外すが、**強�
 中身は次のコマンドで、直接も呼べる（`<入口>` は上の `.../current/scripts`）。
 
 ```bash
-<入口>/use-pet              # いま選んでいるものと、選べるものを表示する
-<入口>/use-pet 9s           # 切り替える（動いたまま 0.2 秒ほどで反映される）
+<入口>/select-pet              # いま選んでいるものと、選べるものを表示する
+<入口>/select-pet 9s           # 切り替える（動いたまま 0.2 秒ほどで反映される）
 
 <入口>/add-pet 9s ~/somewhere/9s-frames                      # そのディレクトリを登録する
 <入口>/add-pet clawd --sheet ~/Downloads/clawd.webp \
@@ -383,7 +383,7 @@ MCP サーバーは標準入力が閉じれば自分で印を外すが、**強�
 
 ### 見た目を変える
 
-書き込み用の `config.json`（置き場所は `use-pet` の 1 行目に出る）を書き換えると、
+書き込み用の `config.json`（置き場所は `add-pet` の 1 行目に出る）を書き換えると、
 次の監視周期（0.2 秒）で反映される。
 
 - `pet` 表示するペットの名前
